@@ -11,6 +11,10 @@ TIDE is a public, login-free stock research workbench. It combines five years of
 - Annual financial statement explorer with value, growth, and margin modes
 - Interactive quality-factor decomposition and filing provenance
 - Local stock screener, comparison studio, and discounted cash-flow lab
+- Private portfolio import for CSV, QFX/OFX, QIF, JSON, and best-effort PDF, with a normalized audit ledger
+- Cash-flow-matched portfolio comparisons, holdings reconstruction, drawdown, volatility, and attribution context
+- SEC 13F explorer with eight-quarter history, concentration maps, entries, exits, and share-count changes
+- Public-official disclosure explorer with annual value ranges, action timelines, filters, and original filing links
 - Command-palette search, responsive layouts, light/dark themes, and accessible controls
 - Browser-only watchlists with JSON export—no login or tracking database
 - Daily static-data refresh workflow suitable for a public repository
@@ -22,10 +26,12 @@ The deployed application is static from the user’s perspective: the browser re
 ```text
 Daily build             Static deployment                 Visitor browser
 ────────────            ─────────────────                 ───────────────
-Price history  ─┐       HTML / CSS / JS          ─┐      Dip scoring
-SEC filings    ─┴─▶     market-data.json          ┴─▶    Screening
-Normalization           dated + source-labeled            Valuation
-Quality checks                                             Local watchlists
+Price history   ─┐      HTML / CSS / JS             ─┐    Dip scoring
+ETF histories   ├─▶    benchmark-data.json          │     Portfolio benchmarks
+SEC company data├─▶    market-data.json             │     Screening + valuation
+SEC 13F tables  ├─▶    institutional-data.json      ├─▶   13F change analysis
+House records   ─┘      government-data.json         │     Disclosure timelines
+                        dated + source-labeled        └─▶   Local portfolio analysis
 ```
 
 The code is organized by responsibility:
@@ -33,6 +39,7 @@ The code is organized by responsibility:
 - `src/domain` — types, financial formulas, and ranking logic
 - `src/features` — product capabilities grouped by user workflow
 - `src/components` — reusable visual primitives
+- `src/infrastructure` — replaceable repositories at the static-data boundary
 - `scripts` — repeatable static-data ingestion and normalization
 - `public/data` — generated, dated research snapshot
 - `tests` — rendered-output and data-integrity checks
@@ -55,6 +62,9 @@ Then open the local URL printed in the terminal.
 ```bash
 npm run dev          # local development
 npm run data:update  # refresh prices and SEC fundamentals
+npm run data:benchmarks   # refresh SPY, QQQ, and VTI histories
+npm run data:intelligence # refresh SEC 13F and House disclosure snapshots
+npm run data:update:all   # refresh every generated research snapshot
 npm run lint         # static code checks
 npm run build        # production build
 npm test             # build + rendered and data-quality tests
@@ -63,6 +73,8 @@ npm test             # build + rendered and data-quality tests
 ## Data policy
 
 - Fundamentals come from the SEC EDGAR Company Facts API.
+- Institutional positions come from official SEC Form 13F information tables.
+- Public-official records come from the U.S. House Financial Disclosure database.
 - Prices are a dated end-of-day snapshot obtained by the build-time provider adapter.
 - Price data is never described as real-time.
 - Missing filing facts stay missing; TIDE does not silently estimate them.
@@ -72,7 +84,7 @@ The current price adapter uses Yahoo Finance chart data as a community endpoint.
 
 ## Privacy
 
-TIDE has no login. Watchlists and preferences are stored in the visitor’s browser and can be exported manually. No portfolio data is transmitted to the application.
+TIDE has no login. Watchlists and theme preference are stored in the visitor’s browser and can be exported manually. Imported portfolio records remain in memory only and disappear on refresh unless the visitor explicitly exports normalized JSON. No portfolio document is transmitted to the application.
 
 ## Disclaimer
 

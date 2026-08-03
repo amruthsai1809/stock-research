@@ -1,0 +1,6 @@
+Date,Action,Symbol,Quantity,Price,Amount,Fees
+2024-01-02,Deposit,,,,12000,0
+2024-01-03,Buy,AAPL,20,185.64,3712.80,0
+2024-02-01,Buy,MSFT,10,403.78,4037.80,0
+2025-01-10,Buy,GOOGL,15,192.04,2880.60,0
+2025-06-13,Dividend,MSFT,0,0,8.30,0

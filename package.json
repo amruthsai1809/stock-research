@@ -10,12 +10,16 @@
     "build": "vinext build",
     "start": "vinext start",
     "data:update": "node scripts/update-data.mjs",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/data-quality.test.mjs",
+    "data:intelligence": "node scripts/update-intelligence.mjs",
+    "data:benchmarks": "node scripts/update-benchmarks.mjs",
+    "data:update:all": "npm run data:update && npm run data:benchmarks && npm run data:intelligence",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/data-quality.test.mjs tests/intelligence-data.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
     "lightweight-charts": "5.2.0",
     "next": "16.2.12",
+    "pdfjs-dist": "^5.4.149",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
