@@ -12,8 +12,10 @@
     "data:update": "node scripts/update-data.mjs",
     "data:intelligence": "node scripts/update-intelligence.mjs",
     "data:benchmarks": "node scripts/update-benchmarks.mjs",
-    "data:update:all": "npm run data:update && npm run data:benchmarks && npm run data:intelligence",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/data-quality.test.mjs tests/intelligence-data.test.mjs",
+    "data:signals": "node scripts/update-research-signals.mjs",
+    "data:update:all": "npm run data:update && npm run data:benchmarks && npm run data:intelligence && npm run data:signals",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
@@ -21,7 +23,8 @@
     "next": "16.2.12",
     "pdfjs-dist": "^5.4.149",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "zod": "^4.1.5"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

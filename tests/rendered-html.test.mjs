@@ -17,8 +17,9 @@ test("renders the TIDE application shell", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>TIDE — Fundamentals-first equity research<\/title>/i);
-  assert.match(html, /TIDE — Find the signal beneath the selloff/i);
+  assert.match(html, /<title>TIDE — Evidence-first equity research<\/title>/i);
+  assert.match(html, /TIDE — Evidence before opinion/i);
+  assert.match(html, /tide-equity-research\.amruthsai1809\.chatgpt\.site/i);
   assert.match(html, /Preparing the research desk/);
   assert.match(html, /Loading end-of-day prices and SEC-derived fundamentals/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);

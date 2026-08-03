@@ -1,5 +1,5 @@
-import { TideApp } from "@/src/features/shell/TideApp";
+import { AppBootstrap } from "@/src/app/AppBootstrap";
 
 export default function Home() {
-  return <TideApp />;
+  return <AppBootstrap />;
 }

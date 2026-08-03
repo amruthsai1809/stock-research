@@ -1,5 +1,7 @@
-import type { InstitutionalIndex, InstitutionalManager } from "@/src/domain/institutional";
+import type { GovernmentRepository, InstitutionalRepository } from "@/src/application/ports/repositories";
 import type { GovernmentFiler, GovernmentMeta, GovernmentProfile, GovernmentTrade } from "@/src/domain/government";
+import type { InstitutionalIndex, InstitutionalManager } from "@/src/domain/institutional";
+import { parseInstitutionalIndex, parseInstitutionalManager } from "@/src/shared/contracts/institutionalData";
 
 async function loadJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -7,34 +9,22 @@ async function loadJson<T>(url: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export interface InstitutionalRepository {
-  loadIndex(): Promise<InstitutionalIndex>;
-  loadManager(id: string): Promise<InstitutionalManager>;
-}
-
 export class StaticInstitutionalRepository implements InstitutionalRepository {
   private index: InstitutionalIndex | null = null;
   private readonly managers = new Map<string, InstitutionalManager>();
 
   async loadIndex() {
-    this.index ??= await loadJson<InstitutionalIndex>("./data/institutional/index.json");
+    this.index ??= parseInstitutionalIndex(await loadJson<unknown>("./data/institutional/index.json"));
     return this.index;
   }
 
   async loadManager(id: string) {
     const cached = this.managers.get(id);
     if (cached) return cached;
-    const manager = await loadJson<InstitutionalManager>(`./data/institutional/${encodeURIComponent(id)}.json`);
+    const manager = parseInstitutionalManager(await loadJson<unknown>(`./data/institutional/${encodeURIComponent(id)}.json`));
     this.managers.set(id, manager);
     return manager;
   }
-}
-
-export interface GovernmentRepository {
-  loadMeta(): Promise<GovernmentMeta>;
-  loadIndex(): Promise<GovernmentFiler[]>;
-  loadRecent(): Promise<GovernmentTrade[]>;
-  loadProfile(id: string): Promise<GovernmentProfile>;
 }
 
 export class StaticGovernmentRepository implements GovernmentRepository {
@@ -66,6 +56,3 @@ export class StaticGovernmentRepository implements GovernmentRepository {
     return profile;
   }
 }
-
-export const institutionalRepository = new StaticInstitutionalRepository();
-export const governmentRepository = new StaticGovernmentRepository();

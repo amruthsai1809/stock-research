@@ -9,6 +9,7 @@ TIDE is public, login-free, and designed for static hosting. It combines five ye
 - Explainable Dip Finder combining price dislocation with business quality
 - Company research cockpit with interactive OHLC, volume, moving averages, exact date hover, and deterministic “What changed?” insights
 - Stock screener, comparison studio, annual financial explorer, and discounted cash-flow lab
+- Explainable Stock Intelligence with five strategy profiles, factor attribution, confidence, conservative fair value, SEC insider and active-manager 13F signals, evidence export, and an optional BYOK AI research editor
 - Private portfolio import for CSV, QFX/OFX, QIF, JSON, and best-effort PDF, including cash-flow-matched benchmark comparisons
 - Institutional ownership lab with 27 curated managers, 20 quarters of history, source-linked filings, lifecycle detection, share-count changes, and per-position entry/add/trim/exit trails
 - Public-disclosure explorer with 440 searchable congressional and executive filers, 65,000+ normalized transactions, activity-derived exposure signals, reporting-delay analysis, and original filing links
@@ -33,6 +34,9 @@ Broker export file  ────────────────────
 The code is organized by responsibility:
 
 - `src/domain` — typed financial entities and deterministic calculations
+- `src/application/ports` — repository contracts that keep use cases independent of delivery and storage
+- `src/modules/stock-intelligence` — a vertical slice with domain, application, infrastructure-facing contracts, controller, and view
+- `src/app/composition` — the only place concrete browser repositories are assembled
 - `src/features` — product capabilities grouped by user workflow
 - `src/components` — reusable visual and chart primitives
 - `src/infrastructure/repositories` — replaceable static-data access boundaries
@@ -58,7 +62,9 @@ npm run dev                # local development
 npm run data:update        # prices and SEC fundamentals
 npm run data:benchmarks    # SPY, QQQ, and VTI history
 npm run data:intelligence  # institutional and public-disclosure snapshots
+npm run data:signals       # SEC insider and active-manager ownership signals
 npm run data:update:all    # every generated research snapshot
+npm run typecheck          # strict TypeScript validation
 npm run lint               # static code checks
 npm run build              # production build
 npm test                   # build plus data and rendered-output tests
@@ -72,13 +78,14 @@ npm test                   # build plus data and rendered-output tests
 - Prices are dated end-of-day snapshots and are never described as real-time.
 - Missing facts remain missing. TIDE does not turn disclosure ranges into exact values or activity into a claimed live portfolio.
 - Every material institutional or public-official record links to a primary filing.
+- Stock Intelligence is deterministic; an optional user-selected AI provider explains the already-computed evidence and never supplies hidden score inputs.
 - Rankings and inferred exposure signals are research context, not recommendations.
 
 The current price adapter uses Yahoo Finance chart data as a community endpoint. It is isolated in `scripts/update-data.mjs` so it can be replaced without changing the product or domain layers.
 
 ## Privacy
 
-TIDE has no login. Theme and watchlist preferences are the only values stored in browser local storage. Imported portfolio records stay in memory and disappear on refresh unless the visitor explicitly exports normalized JSON. No portfolio file is transmitted to TIDE.
+TIDE has no login. Theme and watchlist preferences are the only values stored in browser local storage. Imported portfolio records and optional AI API keys stay in memory and disappear on refresh. Portfolio files are not transmitted to TIDE; an AI key and the on-screen evidence packet go directly to the selected provider only after the visitor explicitly requests a memo.
 
 ## License and attribution
 

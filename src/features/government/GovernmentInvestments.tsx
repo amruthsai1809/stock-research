@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import type { GovernmentRepository } from "@/src/application/ports/repositories";
 import { StockMark, Tag } from "@/src/components/ui";
 import {
   buildExposureSignals,
@@ -12,14 +13,13 @@ import {
   type GovernmentProfile,
   type GovernmentTrade,
 } from "@/src/domain/government";
-import { governmentRepository } from "@/src/infrastructure/repositories/staticIntelligenceRepository";
 
 type ActionFilter = "all" | "purchase" | "sale" | "exchange" | "other";
 type UniverseFilter = "current" | "recent" | "all" | "archive";
 type BranchFilter = "all" | "house" | "senate" | "executive";
 type TimeFilter = "1Y" | "3Y" | "5Y" | "ALL";
 
-export function GovernmentInvestments({ onSelect }: { onSelect: (symbol: string) => void }) {
+export function GovernmentInvestments({ onSelect, repository }: { onSelect: (symbol: string) => void; repository: GovernmentRepository }) {
   const [meta, setMeta] = useState<GovernmentMeta | null>(null);
   const [filers, setFilers] = useState<GovernmentFiler[]>([]);
   const [recent, setRecent] = useState<GovernmentTrade[]>([]);
@@ -37,17 +37,17 @@ export function GovernmentInvestments({ onSelect }: { onSelect: (symbol: string)
 
   useEffect(() => {
     let active = true;
-    Promise.all([governmentRepository.loadMeta(), governmentRepository.loadIndex(), governmentRepository.loadRecent()])
+    Promise.all([repository.loadMeta(), repository.loadIndex(), repository.loadRecent()])
       .then(([nextMeta, nextFilers, nextRecent]) => { if (active) { setMeta(nextMeta); setFilers(nextFilers); setRecent(nextRecent); } })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, []);
+  }, [repository]);
 
   useEffect(() => {
     let active = true;
-    governmentRepository.loadProfile(filerId).then((payload) => { if (active) setProfile(payload); }).catch(() => { if (active) setFailed(true); });
+    repository.loadProfile(filerId).then((payload) => { if (active) setProfile(payload); }).catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [filerId]);
+  }, [filerId, repository]);
 
   const recentCutoff = useMemo(() => {
     const latest = filers.reduce((value, filer) => filer.latestTransactionDate > value ? filer.latestTransactionDate : value, "0000-01-01");

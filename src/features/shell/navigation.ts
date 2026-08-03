@@ -1,4 +1,4 @@
-export type AppView = "discover" | "dips" | "company" | "screener" | "compare" | "valuation" | "filings" | "portfolio" | "institutional" | "government";
+export type AppView = "discover" | "dips" | "company" | "screener" | "compare" | "valuation" | "filings" | "signals" | "portfolio" | "institutional" | "government";
 
 export type NavigationItem = {
   id: AppView;
@@ -15,6 +15,7 @@ export const navigation: NavigationItem[] = [
   { id: "compare", label: "Compare", shortLabel: "Compare", glyph: "⇄", section: "Research" },
   { id: "valuation", label: "Valuation Lab", shortLabel: "Value", glyph: "◇", section: "Research" },
   { id: "filings", label: "Company filings", shortLabel: "SEC", glyph: "▤", section: "Research" },
+  { id: "signals", label: "Stock Intelligence", shortLabel: "Scores", glyph: "AI", section: "Intelligence" },
   { id: "portfolio", label: "My Portfolio", shortLabel: "Portfolio", glyph: "◒", section: "Intelligence" },
   { id: "institutional", label: "13F Explorer", shortLabel: "13F", glyph: "◫", section: "Intelligence" },
   { id: "government", label: "Public officials", shortLabel: "Officials", glyph: "⌂", section: "Intelligence" },

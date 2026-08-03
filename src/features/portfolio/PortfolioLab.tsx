@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
+import type { BenchmarkRepository } from "@/src/application/ports/repositories";
 import type { AnalyzedStock } from "@/src/domain/stock";
-import { analyzePortfolio, demoPortfolioTransactions, parseBrokerPdfText, parsePortfolioText, type BenchmarkDataset, type PortfolioBenchmark, type PortfolioParseResult, type PortfolioTransaction } from "@/src/domain/portfolio";
+import { analyzePortfolio, demoPortfolioTransactions, parseBrokerPdfText, parsePortfolioText, type PortfolioBenchmark, type PortfolioParseResult, type PortfolioTransaction } from "@/src/domain/portfolio";
 import { PortfolioPerformanceChart } from "@/src/components/charts/PortfolioPerformanceChart";
 import { MetricCard, StockMark, Tag } from "@/src/components/ui";
 
-export function PortfolioLab({ stocks, onSelect }: { stocks: AnalyzedStock[]; onSelect: (symbol: string) => void }) {
+export function PortfolioLab({ stocks, onSelect, benchmarkRepository }: { stocks: AnalyzedStock[]; onSelect: (symbol: string) => void; benchmarkRepository: BenchmarkRepository }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [transactions, setTransactions] = useState<PortfolioTransaction[]>(demoPortfolioTransactions);
   const [benchmarks, setBenchmarks] = useState<PortfolioBenchmark[]>([]);
@@ -20,9 +21,9 @@ export function PortfolioLab({ stocks, onSelect }: { stocks: AnalyzedStock[]; on
 
   useEffect(() => {
     let active = true;
-    fetch("./data/benchmark-data.json").then((response) => { if (!response.ok) throw new Error(); return response.json() as Promise<BenchmarkDataset>; }).then((payload) => { if (active) setBenchmarks(payload.benchmarks); }).catch(() => { if (active) setBenchmark(stocks[0]?.symbol ?? ""); });
+    benchmarkRepository.load().then((payload) => { if (active) setBenchmarks(payload.benchmarks); }).catch(() => { if (active) setBenchmark(stocks[0]?.symbol ?? ""); });
     return () => { active = false; };
-  }, [stocks]);
+  }, [benchmarkRepository, stocks]);
 
   const openFile = () => inputRef.current?.click();
   const handleInput = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) void importFile(file); event.target.value = ""; };

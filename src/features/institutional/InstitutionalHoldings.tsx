@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { InstitutionalRepository } from "@/src/application/ports/repositories";
 import { PositionHistoryChart } from "@/src/components/charts/PositionHistoryChart";
 import { StockMark, Tag } from "@/src/components/ui";
 import {
@@ -13,13 +14,12 @@ import {
   type InstitutionalIndex,
   type InstitutionalManager,
 } from "@/src/domain/institutional";
-import { institutionalRepository } from "@/src/infrastructure/repositories/staticIntelligenceRepository";
 
 type ChangeFilter = "all" | "new" | "increased" | "reduced" | "exited";
 type DirectoryFilter = "active" | "all" | "archived";
 type DisplayHolding = HoldingChange & { exited?: boolean };
 
-export function InstitutionalHoldings({ onSelect }: { onSelect: (symbol: string) => void }) {
+export function InstitutionalHoldings({ onSelect, repository }: { onSelect: (symbol: string) => void; repository: InstitutionalRepository }) {
   const [index, setIndex] = useState<InstitutionalIndex | null>(null);
   const [manager, setManager] = useState<InstitutionalManager | null>(null);
   const [managerId, setManagerId] = useState("berkshire");
@@ -34,15 +34,15 @@ export function InstitutionalHoldings({ onSelect }: { onSelect: (symbol: string)
 
   useEffect(() => {
     let active = true;
-    institutionalRepository.loadIndex().then((payload) => { if (active) setIndex(payload); }).catch(() => { if (active) setFailed(true); });
+    repository.loadIndex().then((payload) => { if (active) setIndex(payload); }).catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, []);
+  }, [repository]);
 
   useEffect(() => {
     let active = true;
-    institutionalRepository.loadManager(managerId).then((payload) => { if (active) setManager(payload); }).catch(() => { if (active) setFailed(true); });
+    repository.loadManager(managerId).then((payload) => { if (active) setManager(payload); }).catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [managerId]);
+  }, [managerId, repository]);
 
   const directory = useMemo(() => (index?.managers ?? []).filter((item) => {
     if (directoryFilter === "active" && item.lifecycle.status === "archived") return false;
@@ -109,7 +109,7 @@ export function InstitutionalHoldings({ onSelect }: { onSelect: (symbol: string)
         </div>
       </div>
       {directoryOpen && <div className="intel-directory__drawer">
-        <div className="filter-tabs">{(["active", "all", "archived"] as DirectoryFilter[]).map((item) => <button key={item} className={directoryFilter === item ? "is-active" : ""} onClick={() => setDirectoryFilter(item)}>{item === "active" ? `Active (${activeCount})` : item === "archived" ? `Archive (${index.managers.length - activeCount})` : `All (${index.managers.length})`}</button>)}</div>
+        <div className="filter-tabs">{(["active", "all", "archived"] as DirectoryFilter[]).map((item) => <button key={item} className={directoryFilter === item ? "is-active" : ""} onClick={() => setDirectoryFilter(item)}>{item === "active" ? `Active (${activeCount})` : item === "archived" ? `Closed / historical (${index.managers.length - activeCount})` : `All (${index.managers.length})`}</button>)}</div>
         <div className="manager-directory-grid">{directory.map((item) => <button key={item.id} className={item.id === manager.id ? "is-active" : ""} onClick={() => chooseManager(item.id)}>
           <span className="manager-monogram">{initials(item.displayName)}</span><span><b>{item.name}</b><small>{item.displayName}</small></span><span className={`lifecycle-dot lifecycle-dot--${item.lifecycle.status}`}>{item.lifecycle.status}</span><em>{item.latest?.holdingsCount ?? 0} positions</em>
         </button>)}</div>
@@ -118,24 +118,24 @@ export function InstitutionalHoldings({ onSelect }: { onSelect: (symbol: string)
     </section>
 
     <section className={`panel manager-header manager-header--${manager.lifecycle.status}`}>
-      <div className="manager-title"><span className="manager-monogram manager-monogram--large">{initials(manager.displayName)}</span><div><span className="eyebrow">{manager.category} · CIK {manager.cik}</span><h2>{manager.name}</h2><p>{manager.description}</p></div></div>
-      <div className="filing-status"><span className={`status-pill status-pill--${manager.lifecycle.status}`}><i />{manager.lifecycle.status === "archived" ? "Archived manager" : manager.lifecycle.status === "delayed" ? "Filing delayed" : "Current filer"}</span><small>{manager.lifecycle.reason}</small></div>
-      <label className="quarter-select"><span>Report period</span><select value={quarterIndex} onChange={(event) => { setQuarterIndex(Number(event.target.value)); setSelectedHoldingKey(null); }}>{manager.quarters.map((quarter, itemIndex) => <option value={itemIndex} key={quarter.accession}>{formatQuarter(quarter.reportDate)} · filed {shortDate(quarter.filedDate)}</option>)}</select></label>
+      <div className="manager-title"><span className="manager-monogram manager-monogram--large">{initials(manager.displayName)}</span><div><span className="eyebrow">{manager.lifecycle.status === "archived" ? "Historical record" : manager.category} · CIK {manager.cik}</span><h2>{manager.name}{manager.lifecycle.status === "archived" ? " — closed" : ""}</h2><p>{manager.lifecycle.status === "archived" ? "Historical filings retained for research. This is not a current portfolio." : manager.description}</p></div></div>
+      <div className="filing-status"><span className={`status-pill status-pill--${manager.lifecycle.status}`}><i />{manager.lifecycle.status === "archived" ? "NO LONGER REPORTING" : manager.lifecycle.status === "delayed" ? "Filing delayed" : "Current filer"}</span><small>{manager.lifecycle.status === "archived" ? `Last public portfolio: ${shortDate(manager.quarters[0].reportDate)} · filed ${shortDate(manager.quarters[0].filedDate)}` : manager.lifecycle.reason}</small></div>
+      <label className="quarter-select"><span>{manager.lifecycle.status === "archived" ? "Historical report" : "Report period"}</span><select value={quarterIndex} onChange={(event) => { setQuarterIndex(Number(event.target.value)); setSelectedHoldingKey(null); }}>{manager.quarters.map((quarter, itemIndex) => <option value={itemIndex} key={quarter.accession}>{formatQuarter(quarter.reportDate)} · filed {shortDate(quarter.filedDate)}</option>)}</select></label>
       <a className="secondary-button" href={current.sourceUrl} target="_blank" rel="noreferrer">View SEC filing ↗</a>
     </section>
 
-    {manager.lifecycle.status === "archived" && <section className="archive-banner"><span>Archive</span><div><b>{manager.name} is no longer presented as an active fund.</b><p>{manager.lifecycle.reason}{manager.lifecycle.endedAt ? ` Registration ended ${shortDate(manager.lifecycle.endedAt)}.` : ""} Historical filings remain available for research.</p></div><a href={manager.lifecycle.sourceUrl} target="_blank" rel="noreferrer">Verify status ↗</a></section>}
+    {manager.lifecycle.status === "archived" && <section className="archive-banner archive-banner--critical" role="status"><span>Closed</span><div><b>{manager.name} / Michael Burry is not an active reporting manager in TIDE.</b><p>The last public 13F portfolio covers {shortDate(manager.quarters[0].reportDate)} and was filed {shortDate(manager.quarters[0].filedDate)}. SEC adviser registration ended {manager.lifecycle.endedAt ? shortDate(manager.lifecycle.endedAt) : "after that filing"}. Everything below is labeled and presented as historical—not current holdings.</p></div><a href={manager.lifecycle.sourceUrl} target="_blank" rel="noreferrer">Verify closure ↗</a></section>}
 
     <section className="intel-metrics">
-      <Metric label="Reported value" value={compactMoney(current.totalValue)} note={`At ${shortDate(current.reportDate)}`} />
-      <Metric label="Disclosed positions" value={String(current.holdingsCount)} note={`${current.displayedHoldingsCount} loaded in this view`} />
+      <Metric label={manager.lifecycle.status === "archived" ? "Historical reported value" : "Reported value"} value={compactMoney(current.totalValue)} note={`At ${shortDate(current.reportDate)}`} />
+      <Metric label={manager.lifecycle.status === "archived" ? "Historical positions" : "Disclosed positions"} value={String(current.holdingsCount)} note={`${current.displayedHoldingsCount} loaded in this view`} />
       <Metric label="Top 10 concentration" value={`${managerConcentration(current).toFixed(1)}%`} note={`${topHolding?.symbol ?? topHolding?.issuer ?? "—"} is largest`} />
       <Metric label="Filing delay" value={`${filingLag} days`} note={`Filed ${shortDate(current.filedDate)}`} />
     </section>
 
     <div className="institutional-grid institutional-grid--overview">
       <section className="panel conviction-panel">
-        <div className="panel-heading"><div><span className="eyebrow">Position map</span><h2>Portfolio at a glance</h2><p>Tile size is approximate; labels show exact reported weight.</p></div><Tag tone="neutral">{formatQuarter(current.reportDate)}</Tag></div>
+        <div className="panel-heading"><div><span className="eyebrow">{manager.lifecycle.status === "archived" ? "Historical position map" : "Position map"}</span><h2>{manager.lifecycle.status === "archived" ? "Last disclosed portfolio — not current" : "Portfolio at a glance"}</h2><p>Tile size is approximate; labels show exact reported weight.</p></div><Tag tone={manager.lifecycle.status === "archived" ? "warn" : "neutral"}>{manager.lifecycle.status === "archived" ? `Historical · ${formatQuarter(current.reportDate)}` : formatQuarter(current.reportDate)}</Tag></div>
         <div className="conviction-map">{current.holdings.slice(0, 12).map((holding, itemIndex) => <button key={institutionalHoldingKey(holding)} className={`conviction-tile conviction-tile--${Math.min(4, Math.floor(itemIndex / 3))} ${effectiveHoldingKey === institutionalHoldingKey(holding) ? "is-selected" : ""}`} onClick={() => setSelectedHoldingKey(institutionalHoldingKey(holding))}><span>{holding.symbol ?? holding.issuer.slice(0, 14)}</span><strong>{holding.weight.toFixed(1)}%</strong><small>{compactMoney(holding.value)} · inspect history</small></button>)}</div>
       </section>
       <section className="panel filing-brief">
@@ -155,14 +155,14 @@ export function InstitutionalHoldings({ onSelect }: { onSelect: (symbol: string)
 
     {history && <section className="panel position-inspector" id="institutional-position-history">
       <div className="position-inspector__header"><div className="company-cell"><StockMark symbol={history.holding.symbol ?? history.holding.issuer.slice(0, 2)} /><span><span className="eyebrow">Position history · {manager.name}</span><h2>{history.holding.symbol ?? history.holding.issuer}</h2><small>{history.holding.issuer} · {history.holding.securityClass}{history.holding.optionType ? ` · ${history.holding.optionType}` : ""}</small></span></div><div className="position-inspector__actions">{history.holding.symbol && <button className="secondary-button" onClick={() => onSelect(history.holding.symbol!)}>Research {history.holding.symbol} →</button>}<a className="secondary-button" href={history.points.at(-1)?.sourceUrl} target="_blank" rel="noreferrer">Latest source ↗</a></div></div>
-      <div className="position-summary-strip"><div><span>Current episode began</span><strong>{formatQuarter(history.currentEpisodeStart)}</strong><small>{history.historyLimited ? `Held since at least ${formatQuarter(history.firstLoadedReport)}` : "First reported in loaded filing"}</small></div><div><span>Quarters reported</span><strong>{history.quartersHeld}</strong><small>Across the five-year loaded window</small></div><div><span>Current weight</span><strong>{history.holding.weight.toFixed(2)}%</strong><small>{compactMoney(history.holding.value)} reported value</small></div><div><span>Current shares</span><strong>{compactNumber(history.holding.shares)}</strong><small>Quarter-end share count</small></div></div>
+      <div className="position-summary-strip"><div><span>{manager.lifecycle.status === "archived" ? "Historical episode began" : "Current episode began"}</span><strong>{formatQuarter(history.currentEpisodeStart)}</strong><small>{history.historyLimited ? `Held since at least ${formatQuarter(history.firstLoadedReport)}` : "First reported in loaded filing"}</small></div><div><span>Quarters reported</span><strong>{history.quartersHeld}</strong><small>Across the five-year loaded window</small></div><div><span>{manager.lifecycle.status === "archived" ? "Last disclosed weight" : "Current weight"}</span><strong>{history.holding.weight.toFixed(2)}%</strong><small>{compactMoney(history.holding.value)} reported value</small></div><div><span>{manager.lifecycle.status === "archived" ? "Last disclosed shares" : "Current shares"}</span><strong>{compactNumber(history.holding.shares)}</strong><small>Quarter-end share count</small></div></div>
       <div className="position-inspector__grid"><PositionHistoryChart points={history.points} symbol={history.holding.symbol ?? history.holding.issuer} /><div className="position-event-log"><div className="panel-heading"><div><span className="eyebrow">Filing-by-filing</span><h3>Activity trail</h3></div></div><div>{[...history.points].reverse().filter((point) => point.status !== "absent").map((point) => <article key={point.reportDate}><i className={`event-dot event-dot--${point.status}`} /><div><b>{formatQuarter(point.reportDate)}</b><small>Filed {shortDate(point.filedDate)}</small></div><Tag tone={eventTone(point.status)}>{eventLabel(point.status)}</Tag><div><b>{point.shares == null ? "—" : compactNumber(point.shares)}</b><small>{point.weight == null ? "Not reported" : `${point.weight.toFixed(2)}% weight`}</small></div><a href={point.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open ${formatQuarter(point.reportDate)} filing`}>↗</a></article>)}</div></div></div>
       <div className="position-caveat"><b>How to read “entered”</b><p>13F filings are snapshots. We can identify the first quarter a position appeared, but not the exact trade date or purchase price. “Held since at least” means the position already existed at the start of our five-year window.</p></div>
     </section>}
 
     <section className="institutional-insight-grid">
       <section className="panel consensus-panel"><div className="panel-heading"><div><span className="eyebrow">Cross-manager signal</span><h2>Shared conviction</h2><p>Most common securities in latest active-manager filings.</p></div><Tag tone="blue">{activeCount} managers</Tag></div><div className="consensus-list">{consensus.map((item, itemIndex) => <button key={item.key} onClick={() => item.symbol && onSelect(item.symbol)} disabled={!item.symbol}><span className="rank-number">{String(itemIndex + 1).padStart(2, "0")}</span><StockMark symbol={item.symbol ?? item.issuer.slice(0, 2)} size="sm" /><span><b>{item.symbol ?? item.issuer}</b><small>{item.issuer}</small></span><strong>{item.count}<small>managers</small></strong></button>)}</div></section>
-      <section className="panel coverage-panel"><div className="panel-heading"><div><span className="eyebrow">Coverage & freshness</span><h2>A system designed to age well</h2><p>Identity and filing status are recalculated during each data refresh.</p></div></div><div className="coverage-flow"><article><span>01</span><div><b>Validate identity</b><small>CIK names are checked against SEC submissions.</small></div></article><article><span>02</span><div><b>Detect expected quarter</b><small>Missing or late filers are flagged automatically.</small></div></article><article><span>03</span><div><b>Separate the archive</b><small>Closed managers remain researchable, never presented as current.</small></div></article></div><p className="coverage-stamp">Snapshot generated {dateTime(index.generatedAt)} · latest expected period {formatQuarter(index.expectedReportDate)}</p></section>
+      <section className="panel coverage-panel"><div className="panel-heading"><div><span className="eyebrow">Coverage & freshness</span><h2>A system designed to age well</h2><p>Filing identity, expected periods, and explicit lifecycle records are validated during refresh.</p></div></div><div className="coverage-flow"><article><span>01</span><div><b>Validate identity</b><small>CIK names are checked against SEC submissions.</small></div></article><article><span>02</span><div><b>Detect expected quarter</b><small>Missing or late filers are flagged automatically.</small></div></article><article><span>03</span><div><b>Separate the archive</b><small>Closed managers remain researchable, never presented as current.</small></div></article></div><p className="coverage-stamp">Snapshot generated {dateTime(index.generatedAt)} · latest expected period {formatQuarter(index.expectedReportDate)}</p></section>
     </section>
 
     <section className="methodology-strip"><div><b>Use filings, not folklore</b><p>13F reports can be 45 days old and omit shorts, cash, most bonds, and many foreign securities. Confidential treatment and amendments can also change what appears.</p></div><a href="https://www.sec.gov/divisions/investment/13ffaq" target="_blank" rel="noreferrer">Read the SEC 13F guide ↗</a></section>

@@ -147,7 +147,7 @@ export function buildExposureSignals(trades: GovernmentTrade[]): ExposureSignal[
     const latest = episode.at(-1)!;
     signals.push({
       ticker,
-      assetName: latest.asset_name || purchases.at(-1)!.asset_name,
+      assetName: exposureAssetName(ticker, episode),
       firstReported: episode[0].transaction_date,
       lastActivity: latest.transaction_date,
       lastAction: tradeAction(latest),
@@ -160,6 +160,16 @@ export function buildExposureSignals(trades: GovernmentTrade[]): ExposureSignal[
     });
   }
   return signals.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity) || b.estimatedNetActivity - a.estimatedNetActivity);
+}
+
+function exposureAssetName(ticker: string, trades: GovernmentTrade[]) {
+  const candidates = trades
+    .map((trade) => trade.asset_name.trim())
+    .filter(Boolean)
+    .filter((name) => !/description:|filing\s+status|\$\d|s\d{1,2}\/\d{1,2}\/|\d{8}[A-Z]/i.test(name))
+    .filter((name) => name.length <= 96)
+    .sort((a, b) => a.length - b.length || a.localeCompare(b));
+  return candidates[0] ?? `${ticker} security · source label needs verification`;
 }
 
 export function filerStats(profile: GovernmentProfile) {

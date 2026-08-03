@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ApplicationServices } from "@/src/application/ports/repositories";
 import type { AnalyzedStock, MarketDataset } from "@/src/domain/stock";
 import { analyzeUniverse } from "@/src/domain/analytics";
 import { StockMark, Tag } from "@/src/components/ui";
@@ -14,10 +15,10 @@ import { FilingIntel } from "@/src/features/filings/FilingIntel";
 import { PortfolioLab } from "@/src/features/portfolio/PortfolioLab";
 import { InstitutionalHoldings } from "@/src/features/institutional/InstitutionalHoldings";
 import { GovernmentInvestments } from "@/src/features/government/GovernmentInvestments";
+import { StockIntelligence } from "@/src/modules/stock-intelligence/presentation/StockIntelligence";
 import { navigation, readSymbol, readView, writeView, type AppView } from "@/src/features/shell/navigation";
-import { marketRepository } from "@/src/infrastructure/repositories/staticMarketRepository";
 
-export function TideApp() {
+export function TideApp({ services }: { services: ApplicationServices }) {
   const [dataset, setDataset] = useState<MarketDataset | null>(null);
   const [dataError, setDataError] = useState(false);
   const stocks = useMemo(() => analyzeUniverse(dataset?.stocks ?? []), [dataset]);
@@ -31,9 +32,9 @@ export function TideApp() {
 
   useEffect(() => {
     let active = true;
-    marketRepository.load().then((payload) => { if (active) setDataset(payload); }).catch(() => { if (active) setDataError(true); });
+    services.marketRepository.load().then((payload) => { if (active) setDataset(payload); }).catch(() => { if (active) setDataError(true); });
     return () => { active = false; };
-  }, []);
+  }, [services]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -59,10 +60,10 @@ export function TideApp() {
     const frame = window.requestAnimationFrame(() => {
       const nav = document.querySelector<HTMLElement>(".mobile-nav");
       const active = nav?.querySelector<HTMLElement>(".is-active");
-      if (nav && active && nav.scrollWidth > nav.clientWidth) nav.scrollTo({ left: Math.max(0, active.offsetLeft - nav.clientWidth / 2 + active.clientWidth / 2), behavior: "smooth" });
+      if (nav && active && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = Math.max(0, active.offsetLeft - nav.clientWidth / 2 + active.clientWidth / 2);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [view]);
+  }, [dataset?.generatedAt, view]);
 
   const navigate = (next: AppView) => {
     setView(next);
@@ -128,9 +129,10 @@ export function TideApp() {
         {view === "compare" && <Compare stocks={stocks} onSelect={selectStock} />}
         {view === "valuation" && <ValuationLab stocks={stocks} initialSymbol={selectedSymbol} onSelect={selectStock} />}
         {view === "filings" && <FilingIntel stocks={stocks} onSelect={selectStock} />}
-        {view === "portfolio" && <PortfolioLab stocks={stocks} onSelect={selectStock} />}
-        {view === "institutional" && <InstitutionalHoldings onSelect={selectStock} />}
-        {view === "government" && <GovernmentInvestments onSelect={selectStock} />}
+        {view === "signals" && <StockIntelligence stocks={stocks} repository={services.researchSignalRepository} onSelect={selectStock} />}
+        {view === "portfolio" && <PortfolioLab stocks={stocks} onSelect={selectStock} benchmarkRepository={services.benchmarkRepository} />}
+        {view === "institutional" && <InstitutionalHoldings onSelect={selectStock} repository={services.institutionalRepository} />}
+        {view === "government" && <GovernmentInvestments onSelect={selectStock} repository={services.governmentRepository} />}
       </main>
 
       <footer className="site-footer"><span><b>TIDE</b> · Open-source equity research</span><span>Data as of {formatDate(dataset.priceAsOf)} · Not investment advice</span></footer>

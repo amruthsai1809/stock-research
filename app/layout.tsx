@@ -13,23 +13,43 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TIDE — Fundamentals-first equity research",
+  metadataBase: new URL("https://tide-equity-research.amruthsai1809.chatgpt.site"),
+  title: "TIDE — Evidence-first equity research",
   description:
-    "Find financially resilient businesses inside meaningful market drawdowns with transparent, filing-linked analysis.",
+    "Research stocks with transparent multi-factor scores, dip analysis, 13F portfolios, public-official trades, and private AI-assisted memos.",
   applicationName: "TIDE",
-  keywords: ["stock research", "dip finder", "fundamental analysis", "SEC filings", "valuation"],
+  keywords: [
+    "stock research",
+    "AI stock analysis",
+    "dip finder",
+    "fundamental analysis",
+    "13F filings",
+    "public official trades",
+    "portfolio comparison",
+    "valuation",
+  ],
   openGraph: {
-    title: "TIDE — Find the signal beneath the selloff",
+    title: "TIDE — Evidence before opinion",
     description:
-      "A transparent equity research workbench for finding resilient businesses inside meaningful drawdowns.",
+      "Transparent stock scores, filing-linked evidence, dip analysis, portfolios, and private AI-assisted research.",
     type: "website",
     siteName: "TIDE",
+    url: "/",
+    images: [
+      {
+        url: "/og.png",
+        width: 1731,
+        height: 909,
+        alt: "TIDE — Evidence before opinion",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "TIDE — Find the signal beneath the selloff",
+    title: "TIDE — Evidence before opinion",
     description:
-      "A transparent equity research workbench for finding resilient businesses inside meaningful drawdowns.",
+      "Transparent stock scores, filing-linked evidence, dip analysis, portfolios, and private AI-assisted research.",
+    images: ["/og.png"],
   },
 };
 
