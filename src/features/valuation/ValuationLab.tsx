@@ -62,7 +62,7 @@ export function ValuationLab({ stocks, initialSymbol, onSelect }: { stocks: Anal
 }
 
 function RangeControl({ label, value, minimum, maximum, step, onChange }: { label: string; value: number; minimum: number; maximum: number; step: number; onChange: (value: number) => void }) {
-  return <label className="range-field range-field--valuation"><span><b>{label}</b><strong>{value.toFixed(step < 1 ? 1 : 0)}%</strong></span><input type="range" min={minimum} max={maximum} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /><small><span>{minimum}%</span><span>{maximum}%</span></small></label>;
+  return <label className="range-field range-field--valuation"><span><b>{label}</b><input className="range-number" type="number" aria-label={`${label} exact value`} min={minimum} max={maximum} step={step} value={value} onChange={(event) => onChange(Math.min(maximum, Math.max(minimum, Number(event.target.value))))} /></span><input type="range" min={minimum} max={maximum} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /><small><span>{minimum}%</span><span>{maximum}%</span></small></label>;
 }
 
 function calculateDcf(stock: AnalyzedStock, growth: number, discount: number, terminalGrowth: number) {

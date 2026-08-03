@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import type { AnalyzedStock, AnnualFinancials } from "@/src/domain/stock";
 import { formatCompactCurrency, formatPercent, percentChange } from "@/src/domain/analytics";
-import { Change, LineChart, MetricCard, PriceChart, ScoreDial, StockMark, Tag } from "@/src/components/ui";
+import { Change, MetricCard, ScoreDial, StockMark, Tag } from "@/src/components/ui";
+import { InteractivePriceChart } from "@/src/components/charts/InteractivePriceChart";
+import { FundamentalChart } from "@/src/components/charts/FundamentalChart";
 
 type Props = {
   stock: AnalyzedStock;
@@ -13,19 +15,8 @@ type Props = {
 };
 
 type CompanyTab = "overview" | "financials" | "quality" | "source";
-type FinancialMetric = keyof Pick<AnnualFinancials, "revenue" | "operatingIncome" | "netIncome" | "freeCashFlow">;
-
-const metricLabels: Record<FinancialMetric, string> = {
-  revenue: "Revenue",
-  operatingIncome: "Operating income",
-  netIncome: "Net income",
-  freeCashFlow: "Free cash flow",
-};
-
 export function CompanyResearch({ stock, isWatched, onToggleWatchlist, onOpenValuation }: Props) {
   const [tab, setTab] = useState<CompanyTab>("overview");
-  const [metric, setMetric] = useState<FinancialMetric>("revenue");
-  const [priceRange, setPriceRange] = useState<1 | 3 | 5>(1);
   const annuals = stock.annuals.filter((annual) => annual.revenue != null || annual.netIncome != null);
   const latest = stock.latestAnnual;
   const insights = useMemo(() => buildInsights(stock), [stock]);
@@ -70,8 +61,8 @@ export function CompanyResearch({ stock, isWatched, onToggleWatchlist, onOpenVal
 
           <div className="research-grid">
             <section className="panel chart-panel chart-panel--large">
-              <div className="panel-heading"><div><span className="eyebrow">Market context</span><h2>Price structure</h2></div><div className="chart-range" aria-label="Price history range">{([1, 3, 5] as const).map((years) => <button key={years} className={priceRange === years ? "is-active" : ""} aria-pressed={priceRange === years} onClick={() => setPriceRange(years)}>{years}Y</button>)}</div></div>
-              <PriceChart prices={stock.prices} height={300} years={priceRange} />
+              <div className="panel-heading"><div><span className="eyebrow">Market context</span><h2>Interactive price structure</h2><p>Inspect any session, change the range, or switch to daily candles.</p></div><Tag tone="blue">EOD adjusted</Tag></div>
+              <InteractivePriceChart prices={stock.prices} symbol={stock.symbol} name={stock.name} height={360} />
               <div className="chart-footer-metrics">
                 <span><small>50-day average</small><b>${stock.sma50.toFixed(2)}</b></span>
                 <span><small>200-day average</small><b>${stock.sma200.toFixed(2)}</b></span>
@@ -94,8 +85,8 @@ export function CompanyResearch({ stock, isWatched, onToggleWatchlist, onOpenVal
           </div>
 
           <section className="panel">
-            <div className="panel-heading"><div><span className="eyebrow">Business trajectory</span><h2>Six-year operating record</h2></div><div className="segmented-control segmented-control--compact">{(Object.keys(metricLabels) as FinancialMetric[]).map((item) => <button key={item} className={metric === item ? "is-active" : ""} onClick={() => setMetric(item)}>{metricLabels[item]}</button>)}</div></div>
-            <LineChart series={[{ values: annuals.map((annual) => annual[metric] ?? 0), color: "#1b6f74" }]} labels={annuals.map((annual) => String(annual.year))} height={260} ariaLabel={`${stock.name} ${metricLabels[metric]} history`} />
+            <div className="panel-heading"><div><span className="eyebrow">Business trajectory</span><h2>Six-year operating record</h2><p>Switch metrics and point to a fiscal year for its exact reported value.</p></div></div>
+            <FundamentalChart annuals={annuals} companyName={stock.name} />
           </section>
         </>
       )}
