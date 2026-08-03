@@ -3,16 +3,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ColorType, CrosshairMode, LineSeries, LineStyle, createChart, type BusinessDay, type Time } from "lightweight-charts";
 import type { AnalyzedStock, PricePoint } from "@/src/domain/stock";
+import { priceRangeLabel, selectPriceRange, type PriceRangeKey } from "@/src/domain/priceRange";
 
-type CompareRange = "3M" | "1Y" | "3Y" | "5Y";
+type CompareRange = Extract<PriceRangeKey, "3M" | "1Y" | "3Y" | "5Y">;
 
 export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: AnalyzedStock }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState<CompareRange>("1Y");
   const [theme, setTheme] = useState("light");
-  const [hover, setHover] = useState<{ date: string; left: number | null; right: number | null } | null>(null);
-  const leftVisible = useMemo(() => selectRange(left.prices, range), [left.prices, range]);
-  const rightVisible = useMemo(() => selectRange(right.prices, range), [right.prices, range]);
+  const [hover, setHover] = useState<{ date: string; left: number | null; right: number | null; context: string } | null>(null);
+  const selectedLeft = useMemo(() => selectPriceRange(left.prices, range), [left.prices, range]);
+  const selectedRight = useMemo(() => selectPriceRange(right.prices, range), [right.prices, range]);
+  const commonStart = [selectedLeft[0]?.date, selectedRight[0]?.date].filter(Boolean).sort().at(-1) ?? "";
+  const leftVisible = useMemo(() => selectedLeft.filter((point) => point.date >= commonStart), [selectedLeft, commonStart]);
+  const rightVisible = useMemo(() => selectedRight.filter((point) => point.date >= commonStart), [selectedRight, commonStart]);
   const leftNormalized = useMemo(() => normalize(leftVisible), [leftVisible]);
   const rightNormalized = useMemo(() => normalize(rightVisible), [rightVisible]);
   const latest = {
@@ -20,7 +24,8 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
     left: leftNormalized.at(-1)?.value ?? null,
     right: rightNormalized.at(-1)?.value ?? null,
   };
-  const active = hover ?? latest;
+  const context = `${left.symbol}:${right.symbol}:${range}`;
+  const active = hover?.context === context ? hover : latest;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -67,13 +72,15 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
         return;
       }
       const date = timeKey(parameter.time);
-      setHover({ date, left: leftByDate.get(date) ?? null, right: rightByDate.get(date) ?? null });
+      setHover({ date, left: leftByDate.get(date) ?? null, right: rightByDate.get(date) ?? null, context });
     });
-    chart.timeScale().fitContent();
+    const firstTime = leftNormalized[0]?.time ?? rightNormalized[0]?.time;
+    const lastTime = leftNormalized.at(-1)?.time ?? rightNormalized.at(-1)?.time;
+    if (firstTime && lastTime) chart.timeScale().setVisibleRange({ from: firstTime, to: lastTime });
     const resize = new ResizeObserver(([entry]) => chart.applyOptions({ width: Math.max(1, Math.floor(entry.contentRect.width)) }));
     resize.observe(host);
     return () => { resize.disconnect(); chart.remove(); };
-  }, [leftNormalized, rightNormalized, theme]);
+  }, [context, leftNormalized, rightNormalized, theme]);
 
   const spread = active.left != null && active.right != null ? active.left - active.right : null;
   return (
@@ -85,8 +92,9 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
           <b className="comparison-live__right"><i />{right.symbol} {formatReturn(active.right)}</b>
           {spread != null && <small>{Math.abs(spread).toFixed(1)} point lead</small>}
         </div>
-        <div className="chart-range" aria-label="Comparison period">{(["3M", "1Y", "3Y", "5Y"] as CompareRange[]).map((item) => <button key={item} className={range === item ? "is-active" : ""} aria-pressed={range === item} onClick={() => setRange(item)}>{item}</button>)}</div>
+        <div className="chart-range" aria-label="Comparison period">{(["3M", "1Y", "3Y", "5Y"] as CompareRange[]).map((item) => <button key={item} className={range === item ? "is-active" : ""} aria-pressed={range === item} onClick={() => { setHover(null); setRange(item); }}>{item}</button>)}</div>
       </div>
+      <div className="chart-period-readout" data-chart-range={range} data-range-start={commonStart} data-range-end={leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? ""} data-session-count={Math.min(leftVisible.length, rightVisible.length)}><b>{range}</b><span>{priceRangeLabel(leftVisible.length <= rightVisible.length ? leftVisible : rightVisible)}</span></div>
       <div ref={hostRef} className="chart-stage" role="img" aria-label={`Interactive normalized price performance for ${left.name} and ${right.name}. Move the pointer for exact returns.`} />
       <div className="chart-help"><span>Return from the beginning of the selected period</span><small>Move to inspect · drag to pan · scroll to zoom</small></div>
     </div>
@@ -96,16 +104,6 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
 function normalize(prices: PricePoint[]) {
   const base = prices[0]?.adjustedClose ?? 1;
   return prices.map((point) => ({ time: point.date as Time, value: ((point.adjustedClose / base) - 1) * 100 }));
-}
-
-function selectRange(prices: PricePoint[], range: CompareRange) {
-  if (!prices.length || range === "5Y") return prices;
-  const last = new Date(`${prices.at(-1)!.date}T00:00:00Z`);
-  const days = { "3M": 93, "1Y": 366, "3Y": 1096 }[range];
-  const cutoff = new Date(last);
-  cutoff.setUTCDate(cutoff.getUTCDate() - days);
-  const key = cutoff.toISOString().slice(0, 10);
-  return prices.filter((point) => point.date >= key);
 }
 
 function timeKey(time: Time) {

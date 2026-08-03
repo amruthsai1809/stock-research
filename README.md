@@ -1,95 +1,89 @@
 # TIDE
 
-**Fundamentals-first equity research for finding resilient businesses inside meaningful drawdowns.**
+**A source-first equity research workbench for finding resilient businesses inside meaningful drawdowns.**
 
-TIDE is a public, login-free stock research workbench. It combines five years of end-of-day market history with normalized SEC filing data, then performs screening, ranking, comparison, and valuation calculations locally in the browser.
+TIDE is public, login-free, and designed for static hosting. It combines five years of end-of-day market history with normalized SEC and public-disclosure data, then performs analysis locally in the browser.
 
 ## Product highlights
 
-- Explainable Dip Finder combining price dislocation and business quality
-- Company research cockpit with deterministic “What changed?” insights
-- Annual financial statement explorer with value, growth, and margin modes
-- Interactive quality-factor decomposition and filing provenance
-- Local stock screener, comparison studio, and discounted cash-flow lab
-- Private portfolio import for CSV, QFX/OFX, QIF, JSON, and best-effort PDF, with a normalized audit ledger
-- Cash-flow-matched portfolio comparisons, holdings reconstruction, drawdown, volatility, and attribution context
-- SEC 13F explorer with eight-quarter history, concentration maps, entries, exits, and share-count changes
-- Public-official disclosure explorer with annual value ranges, action timelines, filters, and original filing links
-- Command-palette search, responsive layouts, light/dark themes, and accessible controls
-- Browser-only watchlists with JSON export—no login or tracking database
-- Daily static-data refresh workflow suitable for a public repository
+- Explainable Dip Finder combining price dislocation with business quality
+- Company research cockpit with interactive OHLC, volume, moving averages, exact date hover, and deterministic “What changed?” insights
+- Stock screener, comparison studio, annual financial explorer, and discounted cash-flow lab
+- Private portfolio import for CSV, QFX/OFX, QIF, JSON, and best-effort PDF, including cash-flow-matched benchmark comparisons
+- Institutional ownership lab with 27 curated managers, 20 quarters of history, source-linked filings, lifecycle detection, share-count changes, and per-position entry/add/trim/exit trails
+- Public-disclosure explorer with 440 searchable congressional and executive filers, 65,000+ normalized transactions, activity-derived exposure signals, reporting-delay analysis, and original filing links
+- Responsive layouts, light/dark themes, keyboard-accessible controls, and command-palette search
+- Browser-only watchlists; imported portfolio records remain in memory unless the visitor explicitly exports them
+- Automated static-data validation and weekday refresh workflow
 
 ## Architecture
 
-The deployed application is static from the user’s perspective: the browser receives application assets and a dated market-data snapshot. There is no application database, account system, or secret in the frontend.
+Visitors receive static application assets and dated research snapshots. There is no application database, login system, server-owned user state, or secret in the frontend.
 
 ```text
-Daily build             Static deployment                 Visitor browser
-────────────            ─────────────────                 ───────────────
-Price history   ─┐      HTML / CSS / JS             ─┐    Dip scoring
-ETF histories   ├─▶    benchmark-data.json          │     Portfolio benchmarks
-SEC company data├─▶    market-data.json             │     Screening + valuation
-SEC 13F tables  ├─▶    institutional-data.json      ├─▶   13F change analysis
-House records   ─┘      government-data.json         │     Disclosure timelines
-                        dated + source-labeled        └─▶   Local portfolio analysis
+Scheduled data build                 Static deployment              Visitor browser
+────────────────────                 ─────────────────              ───────────────
+End-of-day prices       ─┐
+SEC company facts       ─┼─ validate ─▶ dated JSON snapshots ─────▶ screening + valuation
+SEC 13F filings         ─┤               HTML / CSS / JS            position histories
+House / Senate / OGE    ─┘                                         disclosure analysis
+Broker export file  ──────────────────────────────────────────────▶ private local analysis
 ```
 
 The code is organized by responsibility:
 
-- `src/domain` — types, financial formulas, and ranking logic
+- `src/domain` — typed financial entities and deterministic calculations
 - `src/features` — product capabilities grouped by user workflow
-- `src/components` — reusable visual primitives
-- `src/infrastructure` — replaceable repositories at the static-data boundary
-- `scripts` — repeatable static-data ingestion and normalization
-- `public/data` — generated, dated research snapshot
+- `src/components` — reusable visual and chart primitives
+- `src/infrastructure/repositories` — replaceable static-data access boundaries
+- `scripts` — repeatable ingestion, normalization, lifecycle checks, and validation
+- `public/data` — generated, dated research snapshots
 - `tests` — rendered-output and data-integrity checks
 
-More detail is available in [Architecture](docs/ARCHITECTURE.md) and [Methodology](docs/METHODOLOGY.md).
+See [Architecture](docs/ARCHITECTURE.md) and [Methodology](docs/METHODOLOGY.md) for details.
 
 ## Getting started
 
-Requirements: Node.js 22.13 or newer.
+Requires Node.js 22.13 or newer.
 
 ```bash
 npm ci
 npm run dev
 ```
 
-Then open the local URL printed in the terminal.
-
 ## Commands
 
 ```bash
-npm run dev          # local development
-npm run data:update  # refresh prices and SEC fundamentals
-npm run data:benchmarks   # refresh SPY, QQQ, and VTI histories
-npm run data:intelligence # refresh SEC 13F and House disclosure snapshots
-npm run data:update:all   # refresh every generated research snapshot
-npm run lint         # static code checks
-npm run build        # production build
-npm test             # build + rendered and data-quality tests
+npm run dev                # local development
+npm run data:update        # prices and SEC fundamentals
+npm run data:benchmarks    # SPY, QQQ, and VTI history
+npm run data:intelligence  # institutional and public-disclosure snapshots
+npm run data:update:all    # every generated research snapshot
+npm run lint               # static code checks
+npm run build              # production build
+npm test                   # build plus data and rendered-output tests
 ```
 
 ## Data policy
 
-- Fundamentals come from the SEC EDGAR Company Facts API.
-- Institutional positions come from official SEC Form 13F information tables.
-- Public-official records come from the U.S. House Financial Disclosure database.
-- Prices are a dated end-of-day snapshot obtained by the build-time provider adapter.
-- Price data is never described as real-time.
-- Missing filing facts stay missing; TIDE does not silently estimate them.
-- Every ranking is research context, not a recommendation.
+- Fundamentals come from SEC EDGAR Company Facts.
+- Institutional positions come from official Form 13F filings and information tables.
+- Public-official activity comes from official House Clerk, Senate eFD, and Office of Government Ethics disclosures, normalized through the MIT-licensed Kadoa pipeline.
+- Prices are dated end-of-day snapshots and are never described as real-time.
+- Missing facts remain missing. TIDE does not turn disclosure ranges into exact values or activity into a claimed live portfolio.
+- Every material institutional or public-official record links to a primary filing.
+- Rankings and inferred exposure signals are research context, not recommendations.
 
-The current price adapter uses Yahoo Finance chart data as a community endpoint. It is isolated in `scripts/update-data.mjs` so it can be replaced with a licensed provider without changing the product or domain layers.
+The current price adapter uses Yahoo Finance chart data as a community endpoint. It is isolated in `scripts/update-data.mjs` so it can be replaced without changing the product or domain layers.
 
 ## Privacy
 
-TIDE has no login. Watchlists and theme preference are stored in the visitor’s browser and can be exported manually. Imported portfolio records remain in memory only and disappear on refresh unless the visitor explicitly exports normalized JSON. No portfolio document is transmitted to the application.
+TIDE has no login. Theme and watchlist preferences are the only values stored in browser local storage. Imported portfolio records stay in memory and disappear on refresh unless the visitor explicitly exports normalized JSON. No portfolio file is transmitted to TIDE.
+
+## License and attribution
+
+TIDE is MIT licensed. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## Disclaimer
 
-TIDE is an educational research project, not investment advice. Market data can be delayed, incomplete, or corrected after publication. Verify important information against primary filings and an authorized market-data source.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+TIDE is an educational research project, not investment advice. Market and filing data can be delayed, incomplete, amended, or corrected. Verify important information against the primary source.

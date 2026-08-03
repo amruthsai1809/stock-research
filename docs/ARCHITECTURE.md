@@ -34,10 +34,23 @@ There are no feature-to-feature imports. A company, portfolio, 13F manager, or p
 The scripts directory is the ingestion boundary:
 
 - `update-data.mjs` normalizes price history and issuer-specific SEC XBRL concepts.
-- `update-intelligence.mjs` normalizes official Form 13F information tables and House disclosure PDFs.
+- `update-institutional.mjs` validates manager CIK identities, combines Form 13F originals and amendments, derives lifecycle state, and emits a small directory plus lazy-loaded manager profiles.
+- `update-government.mjs` normalizes House Clerk, Senate eFD, and OGE records, refreshes current-member metadata, and emits a directory, recent feed, metadata, and lazy-loaded filer profiles.
+- `update-intelligence.mjs` is the orchestration entry point for both intelligence pipelines.
 - Generated records retain report dates and source filing links so the UI can expose provenance.
 
-The application loads that snapshot after the shell renders. This prevents a multi-megabyte dataset from being embedded in the JavaScript bundle and allows the browser to cache data independently from application code.
+The application loads directories after the shell renders and requests an individual manager or filer profile only when selected. This keeps the JavaScript bundle small, avoids a single monolithic intelligence file, and lets the browser cache each immutable snapshot independently.
+
+## Intelligence lifecycle
+
+- A manager registry identifies curated 13F filers by CIK.
+- Each refresh verifies the CIK’s current SEC identity before accepting data.
+- The expected report quarter is calculated from the filing calendar.
+- Missing expected reports become `delayed`; ended managers become `archived` and leave the active directory.
+- Original filings, restatements, additions, confidential-treatment flags, report dates, filing dates, and source URLs remain explicit.
+- Public-filer `active` state is refreshed from the current Congress roster rather than hard-coded in the interface.
+
+This lifecycle data belongs to the generated model. The React views only render its state, so a closure, new filing, amendment, or membership change does not require a UI code change.
 
 ## State
 

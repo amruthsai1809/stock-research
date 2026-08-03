@@ -40,12 +40,20 @@ The benchmark is cash-flow matched: each portfolio deposit is invested into the 
 
 ## Form 13F analysis
 
-TIDE reads official SEC Form 13F information tables. Quarter comparisons use reported share counts to distinguish disclosed manager activity from market-value movement. Concentration is the share of reported 13F value represented by the largest positions; turnover is a value-change proxy, not audited fund turnover.
+TIDE reads official SEC Form 13F information tables, combines compatible originals and amendments by report period, and retains up to 20 quarters per curated manager. Quarter comparisons use reported share counts to distinguish disclosed manager activity from market-value movement. Concentration is the share of reported 13F value represented by the largest positions; turnover is a share-change-based proxy, not audited fund turnover.
+
+A position history labels the first loaded appearance as `entered`, subsequent share-count increases as `added`, decreases as `trimmed`, and disappearance as `exited`. These labels describe quarter-end snapshots. They do not identify the exact trade date or cost basis. If a position is already present in the earliest loaded quarter, the interface says “held since at least” that quarter.
+
+CIK identities and the latest expected reporting quarter are validated during every refresh. Closed managers remain available in an archive and are not presented as current filers.
 
 Form 13F is normally filed up to 45 days after quarter end. It covers specified long U.S.-listed securities and omits shorts, most cash, many bonds, and many foreign securities. It is not a complete or current portfolio.
 
 ## Public-official disclosures
 
-Annual reports and periodic transaction reports use dollar ranges, not exact values. TIDE preserves each reported range and uses its midpoint only to order or size visual elements. The interface keeps annual holdings separate from later transactions and never infers a live portfolio from purchases and sales alone.
+Public transaction reports use dollar ranges, not exact values. TIDE preserves each reported range and uses its midpoint only to order or size visual elements. It always separates the transaction date from the public filing date and flags records marked late by the normalized source.
+
+An activity-derived exposure signal is created only when a disclosed purchase occurs after the latest explicit full sale for the same ticker. Partial sales reduce the activity-range midpoint; an explicit full sale closes the episode. This is a discovery aid, not a claimed current holding, remaining share count, cost basis, or market value. The interface labels it accordingly.
 
 Ownership can include self, spouse, joint, and dependent accounts. Every displayed action links to the official filing, which remains authoritative if parsing or later amendments change a record.
+
+The public dataset combines House Clerk, Senate eFD, and OGE records normalized by the MIT-licensed Kadoa Congress Trading Monitor. Current-member metadata is refreshed from the `unitedstates/congress-legislators` registry. Coverage can still be affected by filing availability, parsing limitations, delayed reports, amendments, and source-site changes.

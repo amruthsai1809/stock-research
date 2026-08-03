@@ -15,12 +15,12 @@ import {
   type Time,
 } from "lightweight-charts";
 import type { PricePoint } from "@/src/domain/stock";
+import { priceRangeLabel, selectPriceRange, type PriceRangeKey } from "@/src/domain/priceRange";
 
-type RangeKey = "1M" | "3M" | "6M" | "YTD" | "1Y" | "3Y" | "5Y";
 type ChartStyle = "line" | "candles";
 
-const fullRanges: RangeKey[] = ["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y"];
-const compactRanges: RangeKey[] = ["3M", "6M", "1Y", "3Y"];
+const fullRanges: PriceRangeKey[] = ["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y"];
+const compactRanges: PriceRangeKey[] = ["3M", "6M", "1Y", "3Y"];
 
 export function InteractivePriceChart({
   prices,
@@ -35,11 +35,11 @@ export function InteractivePriceChart({
   name: string;
   height?: number;
   compact?: boolean;
-  initialRange?: RangeKey;
+  initialRange?: PriceRangeKey;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const [range, setRange] = useState<RangeKey>(initialRange);
+  const [range, setRange] = useState<PriceRangeKey>(initialRange);
   const [style, setStyle] = useState<ChartStyle>("line");
   const [showSma50, setShowSma50] = useState(!compact);
   const [showSma200, setShowSma200] = useState(false);
@@ -59,9 +59,9 @@ export function InteractivePriceChart({
     sma50: movingAverage(prices, 50),
     sma200: movingAverage(prices, 200),
   }), [prices]);
-  const visible = useMemo(() => selectRange(prices, range), [prices, range]);
+  const visible = useMemo(() => selectPriceRange(prices, range), [prices, range]);
   const latest = visible.at(-1) ?? prices.at(-1) ?? null;
-  const active = hovered ?? latest;
+  const active = hovered && visible.includes(hovered) ? hovered : latest;
   const rangeStart = visible[0]?.adjustedClose ?? active?.adjustedClose ?? 1;
   const activeChange = active ? ((active.adjustedClose / rangeStart) - 1) * 100 : 0;
 
@@ -184,7 +184,7 @@ export function InteractivePriceChart({
       const date = timeKey(parameter.time);
       setHovered(pointByDate.get(date) ?? null);
     });
-    chart.timeScale().fitContent();
+    chart.timeScale().setVisibleRange({ from: chartData[0].time, to: chartData.at(-1)!.time });
 
     const resize = new ResizeObserver(([entry]) => {
       chart.applyOptions({ width: Math.max(1, Math.floor(entry.contentRect.width)) });
@@ -218,7 +218,7 @@ export function InteractivePriceChart({
       <div className="chart-toolbar">
         <div className="chart-range" aria-label={`${name} price range`}>
           {(compact ? compactRanges : fullRanges).map((item) => (
-            <button key={item} className={range === item ? "is-active" : ""} aria-pressed={range === item} onClick={() => setRange(item)}>{item}</button>
+            <button key={item} className={range === item ? "is-active" : ""} aria-pressed={range === item} onClick={() => { setHovered(null); setRange(item); }}>{item}</button>
           ))}
         </div>
         {!compact && (
@@ -234,6 +234,10 @@ export function InteractivePriceChart({
         )}
       </div>
 
+      <div className="chart-period-readout" data-chart-range={range} data-range-start={visible[0]?.date ?? ""} data-range-end={visible.at(-1)?.date ?? ""} data-session-count={visible.length}>
+        <b>{range}</b><span>{priceRangeLabel(visible)}</span>
+      </div>
+
       <div
         ref={hostRef}
         className="chart-stage"
@@ -243,23 +247,6 @@ export function InteractivePriceChart({
       <div className="chart-help"><span><i className="legend-swatch legend-swatch--coral" />{style === "candles" ? "Daily OHLC" : "Adjusted close"}</span><small>Move to inspect · drag to pan · scroll to zoom</small></div>
     </div>
   );
-}
-
-function selectRange(prices: PricePoint[], range: RangeKey) {
-  if (!prices.length || range === "5Y") return prices;
-  const last = new Date(`${prices.at(-1)!.date}T00:00:00Z`);
-  if (range === "YTD") return prices.filter((point) => point.date >= `${last.getUTCFullYear()}-01-01`);
-  const days: Record<Exclude<RangeKey, "YTD" | "5Y">, number> = {
-    "1M": 31,
-    "3M": 93,
-    "6M": 186,
-    "1Y": 366,
-    "3Y": 1096,
-  };
-  const cutoff = new Date(last);
-  cutoff.setUTCDate(cutoff.getUTCDate() - days[range]);
-  const cutoffKey = cutoff.toISOString().slice(0, 10);
-  return prices.filter((point) => point.date >= cutoffKey);
 }
 
 function movingAverage(prices: PricePoint[], period: number) {

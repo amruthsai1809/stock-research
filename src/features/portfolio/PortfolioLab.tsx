@@ -32,7 +32,7 @@ export function PortfolioLab({ stocks, onSelect }: { stocks: AnalyzedStock[]; on
       let result: PortfolioParseResult;
       if (file.name.toLowerCase().endsWith(".pdf")) {
         const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-        const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), disableWorker: true }).promise;
+        const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
         const pages: string[] = [];
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
           const page = await pdf.getPage(pageNumber);
