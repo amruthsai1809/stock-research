@@ -5,17 +5,20 @@ import type { AnalyzedStock, AnnualFinancials } from "@/src/domain/stock";
 import { formatCompactCurrency, formatPercent, percentChange } from "@/src/domain/analytics";
 import { Change, MetricCard, ScoreDial, StockMark, Tag } from "@/src/components/ui";
 import { InteractivePriceChart } from "@/src/components/charts/InteractivePriceChart";
-import { FundamentalChart } from "@/src/components/charts/FundamentalChart";
+import { FinancialAtlas } from "@/src/components/charts/FinancialAtlas";
+import { MarketSignals } from "@/src/components/charts/MarketSignals";
+import type { ResearchSignal } from "@/src/modules/stock-intelligence/domain/types";
 
 type Props = {
   stock: AnalyzedStock;
+  researchSignal?: ResearchSignal;
   isWatched: boolean;
   onToggleWatchlist: (symbol: string) => void;
   onOpenValuation: () => void;
 };
 
-type CompanyTab = "overview" | "financials" | "quality" | "source";
-export function CompanyResearch({ stock, isWatched, onToggleWatchlist, onOpenValuation }: Props) {
+type CompanyTab = "overview" | "financials" | "ownership" | "quality" | "source";
+export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatchlist, onOpenValuation }: Props) {
   const [tab, setTab] = useState<CompanyTab>("overview");
   const annuals = stock.annuals.filter((annual) => annual.revenue != null || annual.netIncome != null);
   const latest = stock.latestAnnual;
@@ -43,8 +46,8 @@ export function CompanyResearch({ stock, isWatched, onToggleWatchlist, onOpenVal
       </header>
 
       <nav className="subnav" aria-label={`${stock.name} research sections`}>
-        {(["overview", "financials", "quality", "source"] as CompanyTab[]).map((item) => (
-          <button key={item} className={tab === item ? "is-active" : ""} onClick={() => setTab(item)}>{item === "source" ? "Source lens" : item}</button>
+        {(["overview", "financials", "ownership", "quality", "source"] as CompanyTab[]).map((item) => (
+          <button key={item} className={tab === item ? "is-active" : ""} onClick={() => setTab(item)}>{item === "source" ? "Source lens" : item === "ownership" ? "Market signals" : item}</button>
         ))}
       </nav>
 
@@ -84,14 +87,14 @@ export function CompanyResearch({ stock, isWatched, onToggleWatchlist, onOpenVal
             </aside>
           </div>
 
-          <section className="panel">
-            <div className="panel-heading"><div><span className="eyebrow">Business trajectory</span><h2>Six-year operating record</h2><p>Switch metrics and point to a fiscal year for its exact reported value.</p></div></div>
-            <FundamentalChart annuals={annuals} companyName={stock.name} />
+          <section className="panel financial-atlas-panel">
+            <FinancialAtlas annuals={annuals} companyName={stock.name} />
           </section>
         </>
       )}
 
       {tab === "financials" && <FinancialStatements stock={stock} />}
+      {tab === "ownership" && <MarketSignals stock={stock} signal={researchSignal} />}
       {tab === "quality" && <QualityLab stock={stock} />}
       {tab === "source" && <SourceLens stock={stock} />}
     </div>

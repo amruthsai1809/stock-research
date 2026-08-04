@@ -14,6 +14,7 @@ const SEC_HEADERS = {
   "User-Agent": `TIDE Equity Research ${process.env.SEC_CONTACT ?? "research@example.com"}`,
   Accept: "application/json,application/xml,text/xml",
 };
+const YAHOO_USER_AGENT = "Mozilla/5.0 TIDE research-data refresh";
 
 let secGate = Promise.resolve();
 let lastSecRequest = 0;
@@ -36,6 +37,122 @@ async function fetchSec(url) {
     await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
   }
   throw new Error(`Request failed: ${url}`);
+}
+
+async function createYahooSession() {
+  const seed = await fetch("https://fc.yahoo.com/", { headers: { "User-Agent": YAHOO_USER_AGENT }, redirect: "manual" });
+  const setCookies = typeof seed.headers.getSetCookie === "function"
+    ? seed.headers.getSetCookie()
+    : [seed.headers.get("set-cookie")].filter(Boolean);
+  const cookie = setCookies.map((value) => value.split(";", 1)[0]).join("; ");
+  if (!cookie) throw new Error("Yahoo session cookie was unavailable.");
+  const crumbResponse = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
+    headers: { "User-Agent": YAHOO_USER_AGENT, Cookie: cookie },
+  });
+  if (!crumbResponse.ok) throw new Error(`Yahoo crumb returned ${crumbResponse.status}.`);
+  const crumb = (await crumbResponse.text()).trim();
+  if (!crumb) throw new Error("Yahoo crumb was empty.");
+  return { cookie, crumb };
+}
+
+const raw = (value) => value && typeof value.raw === "number" && Number.isFinite(value.raw) ? value.raw : null;
+const positiveNumber = (value) => typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+const dateFromEpoch = (value) => value == null ? null : new Date(value * 1000).toISOString().slice(0, 10);
+
+async function loadMarketSignals(symbol, session, fallbackAsOf) {
+  const modules = "defaultKeyStatistics,financialData,recommendationTrend,upgradeDowngradeHistory";
+  const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}&crumb=${encodeURIComponent(session.crumb)}`;
+  const response = await fetch(url, { headers: { "User-Agent": YAHOO_USER_AGENT, Cookie: session.cookie } });
+  if (!response.ok) throw new Error(`Yahoo quote summary returned ${response.status}.`);
+  const summary = (await response.json())?.quoteSummary?.result?.[0];
+  if (!summary) throw new Error("Yahoo quote summary was empty.");
+  const financial = summary.financialData ?? {};
+  const statistics = summary.defaultKeyStatistics ?? {};
+  const currentPrice = raw(financial.currentPrice);
+  const targetMean = raw(financial.targetMeanPrice);
+  const history = (summary.upgradeDowngradeHistory?.history ?? []).slice(0, 30).flatMap((item) => {
+    const date = dateFromEpoch(item.epochGradeDate);
+    if (!date) return [];
+    return [{
+      date,
+      firm: String(item.firm ?? "Unknown firm"),
+      action: String(item.action ?? "").toLowerCase(),
+      fromGrade: String(item.fromGrade ?? ""),
+      toGrade: String(item.toGrade ?? ""),
+      priceTargetAction: String(item.priceTargetAction ?? ""),
+      priorPriceTarget: positiveNumber(item.priorPriceTarget),
+      currentPriceTarget: positiveNumber(item.currentPriceTarget),
+    }];
+  });
+  const trend = (summary.recommendationTrend?.trend ?? []).slice(0, 4).map((item) => ({
+    period: String(item.period ?? ""),
+    strongBuy: Number(item.strongBuy ?? 0),
+    buy: Number(item.buy ?? 0),
+    hold: Number(item.hold ?? 0),
+    sell: Number(item.sell ?? 0),
+    strongSell: Number(item.strongSell ?? 0),
+  }));
+  const recommendationMean = raw(financial.recommendationMean);
+  const analystAvailable = recommendationMean != null || targetMean != null || trend.some((item) => item.strongBuy + item.buy + item.hold + item.sell + item.strongSell > 0);
+  return {
+    analyst: {
+      available: analystAvailable,
+      reason: analystAvailable ? null : "Analyst consensus was not available from the public market snapshot.",
+      asOf: history[0]?.date ?? fallbackAsOf,
+      recommendationKey: typeof financial.recommendationKey === "string" ? financial.recommendationKey : null,
+      recommendationMean,
+      numberOfAnalysts: Math.max(0, Math.round(raw(financial.numberOfAnalystOpinions) ?? 0)),
+      targetLow: raw(financial.targetLowPrice),
+      targetMean,
+      targetMedian: raw(financial.targetMedianPrice),
+      targetHigh: raw(financial.targetHighPrice),
+      targetUpside: currentPrice != null && currentPrice > 0 && targetMean != null ? ((targetMean / currentPrice) - 1) * 100 : null,
+      trend,
+      actions: history,
+    },
+    shortInterest: {
+      available: raw(statistics.sharesShort) != null || raw(statistics.shortPercentOfFloat) != null,
+      asOf: dateFromEpoch(raw(statistics.dateShortInterest)),
+      sharesShort: raw(statistics.sharesShort),
+      sharesShortPriorMonth: raw(statistics.sharesShortPriorMonth),
+      shortPercentOfFloat: raw(statistics.shortPercentOfFloat),
+      sharesPercentOutstanding: raw(statistics.sharesPercentSharesOut),
+      daysToCover: raw(statistics.shortRatio),
+      institutionalOwnership: raw(statistics.heldPercentInstitutions),
+      insiderOwnership: raw(statistics.heldPercentInsiders),
+    },
+  };
+}
+
+function unavailableMarketSignals(reason) {
+  return {
+    analyst: {
+      available: false,
+      reason,
+      asOf: null,
+      recommendationKey: null,
+      recommendationMean: null,
+      numberOfAnalysts: 0,
+      targetLow: null,
+      targetMean: null,
+      targetMedian: null,
+      targetHigh: null,
+      targetUpside: null,
+      trend: [],
+      actions: [],
+    },
+    shortInterest: {
+      available: false,
+      asOf: null,
+      sharesShort: null,
+      sharesShortPriorMonth: null,
+      shortPercentOfFloat: null,
+      sharesPercentOutstanding: null,
+      daysToCover: null,
+      institutionalOwnership: null,
+      insiderOwnership: null,
+    },
+  };
 }
 
 const clean = (value = "") => decodeEntities(String(value).replace(/<!\[CDATA\[|\]\]>/g, "")).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -151,23 +268,31 @@ async function main() {
   const market = JSON.parse(await readFile(MARKET_PATH, "utf8"));
   const symbols = market.stocks.map((stock) => stock.symbol);
   const institutional = await buildInstitutionalSignals(symbols);
+  let yahooSession = null;
+  try { yahooSession = await createYahooSession(); }
+  catch (error) { console.warn(`[signals] analyst and short-interest source unavailable: ${error.message}`); }
   const signals = {};
   for (const [index, stock] of market.stocks.entries()) {
     process.stdout.write(`[signals] ${String(index + 1).padStart(2, "0")}/${market.stocks.length} ${stock.symbol}\n`);
     let transactions = [];
     try { transactions = await loadInsiderTransactions(stock); }
     catch (error) { console.warn(`[signals] ${stock.symbol}: insider source unavailable: ${error.message}`); }
+    let marketSignals = unavailableMarketSignals("Analyst consensus was unavailable during the latest static refresh.");
+    if (yahooSession) {
+      try { marketSignals = await loadMarketSignals(stock.symbol, yahooSession, market.priceAsOf); }
+      catch (error) { console.warn(`[signals] ${stock.symbol}: analyst/short source unavailable: ${error.message}`); }
+    }
     signals[stock.symbol] = {
       symbol: stock.symbol,
       insider: { asOf: transactions[0]?.filingDate ?? market.priceAsOf, transactions },
       institutional: institutional[stock.symbol],
-      analyst: { available: false, reason: "No licensed analyst-consensus dataset is bundled; TIDE will not fabricate ratings." },
+      ...marketSignals,
     };
   }
   const output = {
     generatedAt: new Date().toISOString(),
-    methodology: "Fundamental and market factors are computed locally. Corporate-insider activity includes recent SEC Forms 4/4-A open-market codes P and S. Institutional breadth uses only active managers in the latest two loaded 13F periods; archived managers are excluded.",
-    sources: { insiders: "https://www.sec.gov/edgar/sec-api-documentation", institutions: "https://www.sec.gov/divisions/investment/13ffaq" },
+    methodology: "Fundamental and market factors are computed locally. Corporate-insider activity includes recent SEC Forms 4/4-A open-market codes P and S. Institutional breadth uses only active managers in the latest two loaded 13F periods; archived managers are excluded. Analyst consensus and short interest are delayed market snapshots and are dated separately.",
+    sources: { insiders: "https://www.sec.gov/edgar/sec-api-documentation", institutions: "https://www.sec.gov/divisions/investment/13ffaq", analysts: "https://finance.yahoo.com/" },
     signals,
   };
   await writeFile(OUTPUT_PATH, `${JSON.stringify(output, null, 2)}\n`, "utf8");

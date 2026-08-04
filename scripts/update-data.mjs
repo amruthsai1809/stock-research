@@ -17,8 +17,11 @@ const conceptAliases = {
   liabilities: ["Liabilities"],
   equity: ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
   cash: ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"],
-  longTermDebt: ["LongTermDebtAndFinanceLeaseObligationsCurrent", "LongTermDebtCurrent", "LongTermDebtNoncurrent"],
+  longTermDebt: ["LongTermDebtAndFinanceLeaseObligations", "LongTermDebt", "LongTermDebtNoncurrent", "LongTermDebtAndFinanceLeaseObligationsCurrent", "LongTermDebtCurrent"],
   shares: ["EntityCommonStockSharesOutstanding", "CommonStockSharesOutstanding"],
+  dilutedEps: ["EarningsPerShareDiluted", "EarningsPerShareDilutedIncludingExtraordinaryItems"],
+  depreciationAndAmortization: ["DepreciationDepletionAndAmortization", "DepreciationDepletionAndAmortizationPropertyPlantAndEquipment", "DepreciationAmortizationAndAccretionNet", "Depreciation"],
+  researchAndDevelopment: ["ResearchAndDevelopmentExpense", "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost"],
   stockCompensation: ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"],
   buybacks: ["PaymentsForRepurchaseOfCommonStock"],
   dividends: ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock"],
@@ -100,7 +103,11 @@ function mergeAnnualMetrics(facts) {
     liabilities: instantSeries(facts, conceptAliases.liabilities),
     equity: instantSeries(facts, conceptAliases.equity),
     cash: instantSeries(facts, conceptAliases.cash),
+    longTermDebt: instantSeries(facts, conceptAliases.longTermDebt),
     shares: instantSeries(facts, conceptAliases.shares, "shares"),
+    dilutedEps: annualSeries(facts, conceptAliases.dilutedEps, "USD/shares"),
+    depreciationAndAmortization: annualSeries(facts, conceptAliases.depreciationAndAmortization),
+    researchAndDevelopment: annualSeries(facts, conceptAliases.researchAndDevelopment),
     stockCompensation: annualSeries(facts, conceptAliases.stockCompensation),
     buybacks: annualSeries(facts, conceptAliases.buybacks),
     dividends: annualSeries(facts, conceptAliases.dividends),
@@ -148,13 +155,37 @@ function mergeAnnualMetrics(facts) {
       liabilities: instantValueFor("liabilities", source?.end || `${year}-12-31`, year),
       equity: instantValueFor("equity", source?.end || `${year}-12-31`, year),
       cash: instantValueFor("cash", source?.end || `${year}-12-31`, year),
+      longTermDebt: instantValueFor("longTermDebt", source?.end || `${year}-12-31`, year),
       shares: instantValueFor("shares", source?.end || `${year}-12-31`, year),
+      dilutedEps: valueFor("dilutedEps", year),
+      depreciationAndAmortization: valueFor("depreciationAndAmortization", year),
+      ebitda:
+        valueFor("operatingIncome", year) == null || valueFor("depreciationAndAmortization", year) == null
+          ? null
+          : valueFor("operatingIncome", year) + Math.abs(valueFor("depreciationAndAmortization", year)),
+      researchAndDevelopment: valueFor("researchAndDevelopment", year),
       stockCompensation: valueFor("stockCompensation", year),
       buybacks: valueFor("buybacks", year),
       dividends: valueFor("dividends", year),
+      fiscalYearEndPrice: null,
+      priceToEarnings: null,
       sourceConcepts: Object.fromEntries(
         Object.keys(series).map((metric) => [metric, conceptFor(metric, year)]).filter(([, concept]) => concept),
       ),
+    };
+  });
+}
+
+function attachFiscalValuation(annuals, prices) {
+  return annuals.map((annual) => {
+    const fiscalPrice = [...prices].reverse().find((point) => point.date <= annual.end)?.adjustedClose ?? null;
+    const pe = fiscalPrice != null && annual.dilutedEps != null && annual.dilutedEps > 0
+      ? fiscalPrice / annual.dilutedEps
+      : null;
+    return {
+      ...annual,
+      fiscalYearEndPrice: fiscalPrice,
+      priceToEarnings: pe == null ? null : Math.round(pe * 100) / 100,
     };
   });
 }
@@ -197,13 +228,14 @@ async function loadCompany(company) {
     }),
   ]);
   const prices = normalizePrices(pricePayload);
+  const annuals = attachFiscalValuation(mergeAnnualMetrics(factsPayload.facts), prices.history);
   return {
     ...company,
     description: factsPayload.entityName || company.name,
     exchange: prices.meta.fullExchangeName || prices.meta.exchangeName || "US",
     currency: prices.meta.currency || "USD",
     prices: prices.history,
-    annuals: mergeAnnualMetrics(factsPayload.facts),
+    annuals,
   };
 }
 

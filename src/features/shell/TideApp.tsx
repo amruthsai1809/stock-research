@@ -16,10 +16,12 @@ import { PortfolioLab } from "@/src/features/portfolio/PortfolioLab";
 import { InstitutionalHoldings } from "@/src/features/institutional/InstitutionalHoldings";
 import { GovernmentInvestments } from "@/src/features/government/GovernmentInvestments";
 import { StockIntelligence } from "@/src/modules/stock-intelligence/presentation/StockIntelligence";
+import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
 import { navigation, readSymbol, readView, writeView, type AppView } from "@/src/features/shell/navigation";
 
 export function TideApp({ services }: { services: ApplicationServices }) {
   const [dataset, setDataset] = useState<MarketDataset | null>(null);
+  const [researchSignals, setResearchSignals] = useState<ResearchSignalDataset | null>(null);
   const [dataError, setDataError] = useState(false);
   const stocks = useMemo(() => analyzeUniverse(dataset?.stocks ?? []), [dataset]);
   const [view, setView] = useState<AppView>(readView);
@@ -33,6 +35,12 @@ export function TideApp({ services }: { services: ApplicationServices }) {
   useEffect(() => {
     let active = true;
     services.marketRepository.load().then((payload) => { if (active) setDataset(payload); }).catch(() => { if (active) setDataError(true); });
+    return () => { active = false; };
+  }, [services]);
+
+  useEffect(() => {
+    let active = true;
+    services.researchSignalRepository.load().then((payload) => { if (active) setResearchSignals(payload); }).catch(() => { /* Market-signal panels degrade gracefully. */ });
     return () => { active = false; };
   }, [services]);
 
@@ -124,7 +132,7 @@ export function TideApp({ services }: { services: ApplicationServices }) {
       <main className="content">
         {view === "discover" && <Discover stocks={stocks} onSelect={selectStock} onOpenDipFinder={() => navigate("dips")} />}
         {view === "dips" && <DipFinder stocks={stocks} onSelect={selectStock} watchlist={watchlist} onToggleWatchlist={toggleWatchlist} />}
-        {view === "company" && selectedStock && <CompanyResearch stock={selectedStock} isWatched={watchlist.includes(selectedStock.symbol)} onToggleWatchlist={toggleWatchlist} onOpenValuation={() => navigate("valuation")} />}
+        {view === "company" && selectedStock && <CompanyResearch stock={selectedStock} researchSignal={researchSignals?.signals[selectedStock.symbol]} isWatched={watchlist.includes(selectedStock.symbol)} onToggleWatchlist={toggleWatchlist} onOpenValuation={() => navigate("valuation")} />}
         {view === "screener" && <Screener stocks={stocks} onSelect={selectStock} />}
         {view === "compare" && <Compare stocks={stocks} onSelect={selectStock} />}
         {view === "valuation" && <ValuationLab stocks={stocks} initialSymbol={selectedSymbol} onSelect={selectStock} />}

@@ -36,6 +36,54 @@ export type InstitutionalSignal = {
   managersExited: number;
 };
 
+export type AnalystTrend = {
+  period: string;
+  strongBuy: number;
+  buy: number;
+  hold: number;
+  sell: number;
+  strongSell: number;
+};
+
+export type AnalystAction = {
+  date: string;
+  firm: string;
+  action: string;
+  fromGrade: string;
+  toGrade: string;
+  priceTargetAction: string;
+  priorPriceTarget: number | null;
+  currentPriceTarget: number | null;
+};
+
+export type AnalystSignal = {
+  available: boolean;
+  reason: string | null;
+  asOf: string | null;
+  recommendationKey: string | null;
+  recommendationMean: number | null;
+  numberOfAnalysts: number;
+  targetLow: number | null;
+  targetMean: number | null;
+  targetMedian: number | null;
+  targetHigh: number | null;
+  targetUpside: number | null;
+  trend: AnalystTrend[];
+  actions: AnalystAction[];
+};
+
+export type ShortInterestSignal = {
+  available: boolean;
+  asOf: string | null;
+  sharesShort: number | null;
+  sharesShortPriorMonth: number | null;
+  shortPercentOfFloat: number | null;
+  sharesPercentOutstanding: number | null;
+  daysToCover: number | null;
+  institutionalOwnership: number | null;
+  insiderOwnership: number | null;
+};
+
 export type ResearchSignal = {
   symbol: string;
   insider: {
@@ -43,10 +91,8 @@ export type ResearchSignal = {
     transactions: InsiderTransaction[];
   };
   institutional: InstitutionalSignal;
-  analyst: {
-    available: false;
-    reason: string;
-  };
+  analyst: AnalystSignal;
+  shortInterest: ShortInterestSignal;
 };
 
 export type ResearchSignalDataset = {
@@ -55,6 +101,7 @@ export type ResearchSignalDataset = {
   sources: {
     insiders: string;
     institutions: string;
+    analysts: string;
   };
   signals: Record<string, ResearchSignal>;
 };

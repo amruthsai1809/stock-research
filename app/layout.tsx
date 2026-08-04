@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     url: "/",
     images: [
       {
-        url: "/og.png",
+        url: "/og-financial-atlas.png",
         width: 1731,
         height: 909,
         alt: "TIDE — Evidence before opinion",
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     title: "TIDE — Evidence before opinion",
     description:
       "Transparent stock scores, filing-linked evidence, dip analysis, portfolios, and private AI-assisted research.",
-    images: ["/og.png"],
+    images: ["/og-financial-atlas.png"],
   },
 };
 

@@ -183,6 +183,25 @@ function institutionalFactor(signal: ResearchSignal | undefined): RawFactor {
   ]);
 }
 
+function analystFactor(signal: ResearchSignal | undefined): RawFactor {
+  const analyst = signal?.analyst;
+  if (!analyst?.available) return unavailable("analyst", analyst?.reason ?? "Analyst consensus is unavailable for this company.");
+  const ratingScore = analyst.recommendationMean == null ? null : scale(analyst.recommendationMean, 5, 1);
+  const targetScore = analyst.targetUpside == null ? null : scale(analyst.targetUpside, -30, 40);
+  const recent = analyst.actions.slice(0, 15);
+  const upgrades = recent.filter((item) => item.action === "up").length;
+  const downgrades = recent.filter((item) => item.action === "down").length;
+  const revisionScore = recent.length ? clamp(50 + (upgrades - downgrades) * 8) : null;
+  const score = average([ratingScore, targetScore, revisionScore]);
+  return score == null
+    ? unavailable("analyst", "The available analyst snapshot did not contain enough comparable fields.")
+    : available("analyst", Math.round(score), analyst.asOf, [
+        { label: "Consensus", value: analyst.recommendationKey?.replaceAll("_", " ") ?? "Unavailable", direction: (ratingScore ?? 50) >= 65 ? "positive" : (ratingScore ?? 50) < 40 ? "negative" : "neutral", detail: `${analyst.numberOfAnalysts} analyst opinions in the latest delayed snapshot.` },
+        { label: "Mean target upside", value: analyst.targetUpside == null ? "Unavailable" : pct(analyst.targetUpside), direction: (analyst.targetUpside ?? 0) >= 10 ? "positive" : (analyst.targetUpside ?? 0) < 0 ? "negative" : "neutral", detail: "Mean published target relative to the market price captured with the analyst snapshot." },
+        { label: "Recent changes", value: `${upgrades} up / ${downgrades} down`, direction: upgrades > downgrades ? "positive" : downgrades > upgrades ? "negative" : "neutral", detail: "Rating changes among the most recent available analyst actions." },
+      ]);
+}
+
 function available(key: IntelligenceFactorKey, score: number, asOf: string | null, evidence: FactorEvidence[]): RawFactor {
   return { key, label: factorLabels[key], score: clamp(score), status: "available", asOf, evidence };
 }
@@ -211,7 +230,7 @@ export function scoreStockIntelligence(stock: AnalyzedStock, universe: AnalyzedS
     riskFactor(stock, peerSet),
     insiderFactor(signal),
     institutionalFactor(signal),
-    unavailable("analyst", "No licensed analyst-consensus dataset is bundled. The model never fabricates this factor."),
+    analystFactor(signal),
   ];
   const configured = intelligenceStrategies[strategy].weights;
   const availableWeight = rawFactors.reduce((sum, factor) => sum + (factor.score == null ? 0 : configured[factor.key]), 0);

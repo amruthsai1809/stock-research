@@ -31,10 +31,17 @@ const AnnualFinancialsSchema = z.object({
   liabilities: nullableFinite,
   equity: nullableFinite,
   cash: nullableFinite,
+  longTermDebt: nullableFinite,
   shares: nullableFinite,
+  dilutedEps: nullableFinite,
+  depreciationAndAmortization: nullableFinite,
+  ebitda: nullableFinite,
+  researchAndDevelopment: nullableFinite,
   stockCompensation: nullableFinite,
   buybacks: nullableFinite,
   dividends: nullableFinite,
+  fiscalYearEndPrice: nullableFinite,
+  priceToEarnings: nullableFinite,
   sourceConcepts: z.record(z.string(), z.string()),
 });
 

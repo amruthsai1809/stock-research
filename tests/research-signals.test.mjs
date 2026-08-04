@@ -12,6 +12,7 @@ test("stock-intelligence snapshot covers the complete market universe", async ()
   assert.match(dataset.methodology, /computed locally/i);
   assert.match(dataset.sources.insiders, /^https:\/\/www\.sec\.gov\//);
   assert.match(dataset.sources.institutions, /^https:\/\/www\.sec\.gov\//);
+  assert.match(dataset.sources.analysts, /^https:\/\/finance\.yahoo\.com\//);
   assert.deepEqual(Object.keys(dataset.signals).sort(), market.stocks.map((stock) => stock.symbol).sort());
   assert.ok(new Date(dataset.generatedAt).getTime() > 0);
 });
@@ -37,7 +38,7 @@ test("insider signal uses only source-linked open-market transactions", async ()
   }
 });
 
-test("institutional signal excludes archived managers and retains the disclosure dates", async () => {
+test("institutional signal excludes archived managers and market snapshots remain explicit", async () => {
   const dataset = JSON.parse(await readFile(signalsUrl, "utf8"));
   const index = JSON.parse(await readFile(institutionalUrl, "utf8"));
   const activeCount = index.managers.filter((manager) => manager.lifecycle.status === "active").length;
@@ -47,7 +48,18 @@ test("institutional signal excludes archived managers and retains the disclosure
     assert.match(item.reportDate, /^\d{4}-\d{2}-\d{2}$/);
     assert.match(item.filingDate, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(item.managersHolding <= activeCount);
-    assert.equal(signal.analyst.available, false);
-    assert.match(signal.analyst.reason, /licensed|fabricate/i);
+    if (signal.analyst.available) {
+      assert.ok(signal.analyst.numberOfAnalysts > 0);
+      assert.ok(signal.analyst.recommendationMean == null || signal.analyst.recommendationMean > 0);
+      assert.ok(Array.isArray(signal.analyst.trend));
+      assert.ok(Array.isArray(signal.analyst.actions));
+    } else {
+      assert.ok(signal.analyst.reason, `${signal.symbol} must explain unavailable analyst data`);
+    }
+    if (signal.shortInterest.available) {
+      assert.match(signal.shortInterest.asOf, /^\d{4}-\d{2}-\d{2}$/);
+      assert.ok(signal.shortInterest.sharesShort == null || signal.shortInterest.sharesShort >= 0);
+      assert.ok(signal.shortInterest.shortPercentOfFloat == null || signal.shortInterest.shortPercentOfFloat >= 0);
+    }
   }
 });

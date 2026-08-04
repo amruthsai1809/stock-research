@@ -14,12 +14,15 @@ test("market snapshot passes coverage and ordering checks", async () => {
   for (const stock of dataset.stocks) {
     assert.match(stock.symbol, /^[A-Z.]{1,6}$/);
     assert.ok(stock.prices.length >= 1_000, `${stock.symbol} requires five years of trading history`);
+    assert.ok(new Date(stock.prices.at(-1).date).getTime() - new Date(stock.prices[0].date).getTime() >= 4.9 * 365 * 86_400_000, `${stock.symbol} price span must visibly cover five years`);
     assert.ok(stock.annuals.length >= 4, `${stock.symbol} requires four annual observations`);
     assert.ok(stock.prices.every((point) => point.adjustedClose > 0));
     const dates = stock.prices.map((point) => point.date);
     assert.deepEqual(dates, [...dates].sort(), `${stock.symbol} prices must be chronological`);
     assert.equal(new Set(dates).size, dates.length, `${stock.symbol} contains duplicate dates`);
     assert.ok(stock.annuals.some((annual) => annual.revenue != null || annual.netIncome != null));
+    assert.ok(stock.annuals.some((annual) => annual.dilutedEps != null), `${stock.symbol} requires annual EPS history`);
+    assert.ok(stock.annuals.some((annual) => annual.fiscalYearEndPrice != null), `${stock.symbol} requires fiscal-year price history`);
     const latest = stock.annuals.at(-1);
     assert.ok(Object.keys(latest.sourceConcepts ?? {}).length >= 4, `${stock.symbol} requires metric lineage`);
   }

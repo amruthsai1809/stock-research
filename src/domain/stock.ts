@@ -19,7 +19,11 @@ export type SourceMetric =
   | "liabilities"
   | "equity"
   | "cash"
+  | "longTermDebt"
   | "shares"
+  | "dilutedEps"
+  | "depreciationAndAmortization"
+  | "researchAndDevelopment"
   | "stockCompensation"
   | "buybacks"
   | "dividends";
@@ -40,10 +44,17 @@ export type AnnualFinancials = {
   liabilities: number | null;
   equity: number | null;
   cash: number | null;
+  longTermDebt: number | null;
   shares: number | null;
+  dilutedEps: number | null;
+  depreciationAndAmortization: number | null;
+  ebitda: number | null;
+  researchAndDevelopment: number | null;
   stockCompensation: number | null;
   buybacks: number | null;
   dividends: number | null;
+  fiscalYearEndPrice: number | null;
+  priceToEarnings: number | null;
   sourceConcepts: Partial<Record<SourceMetric, string>>;
 };
 
