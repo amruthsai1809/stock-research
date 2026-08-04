@@ -25,7 +25,7 @@ export type GovernmentTrade = {
   id: string;
   filing_id?: string;
   source_id: "house_clerk" | "senate_efd" | "oge_executive";
-  transaction_date: string;
+  transaction_date: string | null;
   notification_date?: string | null;
   filing_date: string;
   owner: string | null;
@@ -33,7 +33,7 @@ export type GovernmentTrade = {
   asset_name: string;
   asset_type: string | null;
   transaction_type: string;
-  amount_range_low: number;
+  amount_range_low: number | null;
   amount_range_high: number | null;
   amount_range_label: string;
   days_to_file: number | null;
@@ -64,6 +64,7 @@ export type GovernmentProfile = {
 export type GovernmentMeta = {
   generatedAt: string;
   upstreamGeneratedAt: string;
+  upstreamCommit?: string;
   source: string;
   normalizedBy: string;
   upstreamUrl: string;
@@ -151,17 +152,18 @@ export function tradeAction(trade: GovernmentTrade): "purchase" | "sale" | "exch
 }
 
 export function tradeRangeMidpoint(trade: GovernmentTrade) {
-  return trade.amount_range_high == null ? trade.amount_range_low : (trade.amount_range_low + trade.amount_range_high) / 2;
+  const low = trade.amount_range_low ?? 0;
+  return trade.amount_range_high == null ? low : (low + trade.amount_range_high) / 2;
 }
 
 export function buildExposureSignals(trades: GovernmentTrade[]): ExposureSignal[] {
-  const latestTradeDate = trades.reduce((latest, trade) => trade.transaction_date > latest ? trade.transaction_date : latest, "0000-01-01");
+  const latestTradeDate = trades.reduce((latest, trade) => (trade.transaction_date ?? "") > latest ? trade.transaction_date! : latest, "0000-01-01");
   const staleDate = new Date(`${latestTradeDate}T00:00:00Z`);
   staleDate.setUTCFullYear(staleDate.getUTCFullYear() - 3);
   const staleCutoff = staleDate.toISOString().slice(0, 10);
-  const byTicker = new Map<string, GovernmentTrade[]>();
+  const byTicker = new Map<string, DatedGovernmentTrade[]>();
   for (const trade of trades) {
-    if (!trade.transaction_date) continue;
+    if (!hasTradeDate(trade)) continue;
     const ticker = trade.ticker?.trim().toUpperCase();
     if (!ticker || !/^[A-Z][A-Z0-9.-]{0,7}$/.test(ticker)) continue;
     const group = byTicker.get(ticker) ?? [];
@@ -171,7 +173,7 @@ export function buildExposureSignals(trades: GovernmentTrade[]): ExposureSignal[
   const signals: ExposureSignal[] = [];
   for (const [ticker, group] of byTicker) {
     const ordered = [...group].sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
-    let episode: GovernmentTrade[] = [];
+    let episode: DatedGovernmentTrade[] = [];
     let net = 0;
     for (const trade of ordered) {
       const action = tradeAction(trade);
@@ -209,6 +211,9 @@ export function buildExposureSignals(trades: GovernmentTrade[]): ExposureSignal[
   }
   return signals.sort((a, b) => b.estimatedNetActivity - a.estimatedNetActivity || b.lastActivity.localeCompare(a.lastActivity));
 }
+
+type DatedGovernmentTrade = GovernmentTrade & { transaction_date: string };
+function hasTradeDate(trade: GovernmentTrade): trade is DatedGovernmentTrade { return Boolean(trade.transaction_date); }
 
 function exposureAssetName(ticker: string, trades: GovernmentTrade[]) {
   const candidates = trades

@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { createStagedDirectory, replaceDirectory } from "./lib/atomicOutput.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const OUTPUT_DIR = path.join(ROOT, "public", "data", "institutional");
@@ -251,7 +252,6 @@ async function fetchManager(config, directory, expected) {
 }
 
 async function main() {
-  await mkdir(OUTPUT_DIR, { recursive: true });
   const generatedAt = new Date().toISOString();
   const expected = expectedQuarter(new Date(generatedAt));
   const directory = await tickerDirectory();
@@ -261,9 +261,6 @@ async function main() {
   }
   const activeCount = managers.filter((manager) => manager.lifecycle.status === "active").length;
   if (activeCount < 20) throw new Error(`Institutional refresh failed validation: only ${activeCount} active managers`);
-  for (const manager of managers) {
-    await writeFile(path.join(OUTPUT_DIR, `${manager.id}.json`), `${JSON.stringify(manager)}\n`);
-  }
   const index = {
     generatedAt,
     expectedReportDate: expected,
@@ -284,8 +281,25 @@ async function main() {
       quartersLoaded: manager.quarters.length,
     })),
   };
-  await writeFile(path.join(OUTPUT_DIR, "index.json"), `${JSON.stringify(index)}\n`);
+  validateInstitutionalSnapshot(index, managers);
+  const stagedOutput = await createStagedDirectory(OUTPUT_DIR);
+  try {
+    await Promise.all([
+      ...managers.map((manager) => writeFile(path.join(stagedOutput, `${manager.id}.json`), `${JSON.stringify(manager)}\n`)),
+      writeFile(path.join(stagedOutput, "index.json"), `${JSON.stringify(index)}\n`),
+    ]);
+    await replaceDirectory(stagedOutput, OUTPUT_DIR);
+  } catch (error) {
+    await rm(stagedOutput, { recursive: true, force: true });
+    throw error;
+  }
   process.stdout.write(`Wrote ${managers.length} manager profiles (${activeCount} active; expected ${expected}).\n`);
+}
+
+function validateInstitutionalSnapshot(index, managers) {
+  if (new Set(managers.map((manager) => manager.id)).size !== managers.length) throw new Error("Institutional snapshot contains duplicate manager IDs");
+  if (index.managers.length !== managers.length) throw new Error("Institutional index does not cover every manager");
+  if (managers.some((manager) => !manager.lifecycle?.status || !manager.quarters.length)) throw new Error("Institutional manager profile is incomplete");
 }
 
 await main();

@@ -44,6 +44,8 @@ The scripts directory is the ingestion boundary:
 
 The application loads directories after the shell renders and requests an individual manager or filer profile only when selected. This keeps the JavaScript bundle small, avoids a single monolithic intelligence file, and lets the browser cache each immutable snapshot independently.
 
+Every generated research snapshot is assembled in a sibling staging directory, validated for completeness and lineage, and then swapped into place. Single-file generators use an atomic temporary-file rename. A failed refresh therefore leaves the last known-good dataset intact instead of exposing a partially written index or profile set.
+
 ## Intelligence lifecycle
 
 - A manager registry identifies curated 13F filers by CIK.
@@ -78,6 +80,14 @@ Architecture boundary tests prevent domain-to-framework imports, presentation-to
 - A failed scheduled refresh does not overwrite the previous valid snapshot.
 - The build workflow validates types and rendered output before changes are accepted.
 
+## Quality boundaries
+
+- Zod contracts validate static JSON at repository boundaries before domain code receives it.
+- Unit tests cover domain policies, view-model filtering and sorting, runtime contracts, ranking rules, and atomic snapshot helpers with enforced coverage thresholds.
+- Browser tests exercise five-year chart ranges, disclosure ranking and position ordering, manager lifecycle labeling, portfolio import, global search, theme switching, every primary feature boundary, and WCAG A/AA checks.
+- Feature-level lazy loading keeps large parsers and research workbenches out of the initial client bundle. CI rejects any individual client asset above the documented bundle budget.
+- Dependency updates are monitored automatically, and production dependencies are audited on every quality run.
+
 ## Extension points
 
 - Price providers can be replaced inside the ingestion script.
@@ -86,3 +96,8 @@ Architecture boundary tests prevent domain-to-framework imports, presentation-to
 - New product capabilities belong in a focused `src/features/<feature>` module.
 - New source formats implement a parser or repository adapter without changing feature views.
 - New datasets must add integrity assertions in `tests/` before publication.
+
+## Decisions
+
+- [ADR 0001: Static modular architecture](adr/0001-static-modular-architecture.md)
+- [ADR 0002: Atomic research snapshots](adr/0002-atomic-research-snapshots.md)

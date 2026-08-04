@@ -15,7 +15,7 @@ TIDE is public, login-free, and designed for static hosting. It combines five ye
 - Public-disclosure explorer with 440 searchable congressional and executive filers, 65,000+ normalized transactions, sample-aware performance and activity rankings, activity-derived exposure signals, reporting-delay analysis, and original filing links
 - Responsive layouts, light/dark themes, keyboard-accessible controls, and command-palette search
 - Browser-only watchlists; imported portfolio records remain in memory unless the visitor explicitly exports them
-- Automated static-data validation and weekday refresh workflow
+- Automated static-data validation, runtime contracts, atomic refreshes, weekday refresh workflow, unit coverage, browser regression tests, accessibility checks, and bundle budgets
 
 ## Architecture
 
@@ -68,7 +68,12 @@ npm run data:update:all    # every generated research snapshot
 npm run typecheck          # strict TypeScript validation
 npm run lint               # static code checks
 npm run build              # production build
-npm test                   # build plus data and rendered-output tests
+npm run test:unit          # unit tests with enforced coverage thresholds
+npm run test:e2e           # Chromium workflow and accessibility tests
+npm run bundle:check       # reject oversized client chunks
+npm run security:check     # audit production dependencies
+npm test                   # types, unit coverage, build, bundle, and data tests
+npm run quality            # lint plus the full non-browser quality gate
 ```
 
 ## Data policy

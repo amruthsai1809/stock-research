@@ -4,11 +4,11 @@ import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { governmentLeaderboardDataset, summarizeGovernmentFiler } from "./lib/governmentLeaderboard.mjs";
+import { createStagedDirectory, replaceDirectory } from "./lib/atomicOutput.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(import.meta.dirname, "..");
 const OUTPUT_DIR = path.join(ROOT, "public", "data", "government");
-const PROFILE_DIR = path.join(OUTPUT_DIR, "profiles");
 const UPSTREAM = "https://github.com/kadoa-org/congress-trading-monitor.git";
 const UPSTREAM_WEB = "https://github.com/kadoa-org/congress-trading-monitor";
 const MAX_PROFILE_TRADES = 1_200;
@@ -58,27 +58,11 @@ function latestTransaction(trades) {
   return trades.reduce((latest, trade) => trade.transaction_date > latest ? trade.transaction_date : latest, "");
 }
 
-async function main() {
-  const temp = await mkdtemp(path.join(tmpdir(), "tide-government-"));
+async function writeGovernmentSnapshot({ enriched, dataDir, recent, stats, commit }) {
+  const stagedOutput = await createStagedDirectory(OUTPUT_DIR);
+  const profileDirectory = path.join(stagedOutput, "profiles");
   try {
-    const commit = await cloneUpstream(temp);
-    const dataDir = path.join(temp, "public", "data");
-    const [filers, stats, recent, legislators] = await Promise.all([
-      readJson(path.join(dataDir, "filers.json")),
-      readJson(path.join(dataDir, "stats.json")),
-      readJson(path.join(dataDir, "trades.json")),
-      currentLegislators(),
-    ]);
-    const latestDate = new Date(`${stats.dateRange?.to}T00:00:00Z`).getTime();
-    if (!Array.isArray(filers) || filers.length < 350) throw new Error(`Upstream filer universe unexpectedly small: ${filers?.length ?? 0}`);
-    if (!Array.isArray(recent) || recent.length < 4_000) throw new Error(`Upstream recent trade set unexpectedly small: ${recent?.length ?? 0}`);
-    if (!latestDate || Date.now() - latestDate > 21 * 86_400_000) throw new Error(`Upstream disclosure feed is stale: ${stats.dateRange?.to ?? "unknown"}`);
-
-    const byBioguide = new Map(legislators.map((member) => [member.id.bioguide, member]));
-    const byName = new Map(legislators.map((member) => [normalizeName(`${member.name.first} ${member.name.middle ?? ""} ${member.name.last}`), member]));
-    const enriched = filers.map((filer) => enrichFiler(filer, currentMemberFor(filer, byBioguide, byName)));
-    await mkdir(PROFILE_DIR, { recursive: true });
-
+    await mkdir(profileDirectory, { recursive: true });
     const profileSummaries = new Map();
     const leaderboardEntries = [];
     for (const filer of enriched) {
@@ -90,15 +74,17 @@ async function main() {
         profile = { filer, trades: recent.filter((trade) => trade.filer_id === filer.id) };
       }
       const trades = (profile.trades ?? []).slice(0, MAX_PROFILE_TRADES);
+      const latestTransactionDate = latestTransaction(trades) || filer.latestTransactionDate || stats.dateRange.to;
+      const filerSnapshot = { ...profile.filer, ...filer, latestTransactionDate, loadedTradeCount: trades.length };
       const payload = {
-        filer: { ...profile.filer, ...filer },
+        filer: filerSnapshot,
         trades,
         historyTruncated: (profile.trades?.length ?? 0) > trades.length,
         totalTradeCount: profile.trades?.length ?? trades.length,
       };
-      profileSummaries.set(filer.id, { latestTransactionDate: latestTransaction(trades), loadedTradeCount: trades.length });
-      leaderboardEntries.push(summarizeGovernmentFiler({ ...profile.filer, ...filer, latestTransactionDate: latestTransaction(trades) || filer.latestTransactionDate || "" }, trades, { asOf: stats.dateRange.to, historyTruncated: payload.historyTruncated }));
-      await writeFile(path.join(PROFILE_DIR, `${filer.id}.json`), `${JSON.stringify(payload)}\n`);
+      profileSummaries.set(filer.id, { latestTransactionDate, loadedTradeCount: trades.length });
+      leaderboardEntries.push(summarizeGovernmentFiler(filerSnapshot, trades, { asOf: stats.dateRange.to, historyTruncated: payload.historyTruncated }));
+      await writeFile(path.join(profileDirectory, `${filer.id}.json`), `${JSON.stringify(payload)}\n`);
     }
 
     const index = enriched.map((filer) => ({ ...filer, ...profileSummaries.get(filer.id) }));
@@ -130,13 +116,49 @@ async function main() {
       disclosureLag: stats.disclosureLag,
     };
     const leaderboard = governmentLeaderboardDataset(leaderboardEntries, { asOf: stats.dateRange.to, generatedAt });
+    validateGovernmentSnapshot({ index, recent, meta, leaderboard });
     await Promise.all([
-      writeFile(path.join(OUTPUT_DIR, "index.json"), `${JSON.stringify(index)}\n`),
-      writeFile(path.join(OUTPUT_DIR, "recent.json"), `${JSON.stringify(recent)}\n`),
-      writeFile(path.join(OUTPUT_DIR, "meta.json"), `${JSON.stringify(meta)}\n`),
-      writeFile(path.join(OUTPUT_DIR, "leaderboard.json"), `${JSON.stringify(leaderboard)}\n`),
+      writeFile(path.join(stagedOutput, "index.json"), `${JSON.stringify(index)}\n`),
+      writeFile(path.join(stagedOutput, "recent.json"), `${JSON.stringify(recent)}\n`),
+      writeFile(path.join(stagedOutput, "meta.json"), `${JSON.stringify(meta)}\n`),
+      writeFile(path.join(stagedOutput, "leaderboard.json"), `${JSON.stringify(leaderboard)}\n`),
     ]);
+    await replaceDirectory(stagedOutput, OUTPUT_DIR);
     process.stdout.write(`Wrote ${index.length} public-official profiles (${currentCongress.length} current members; ${stats.totalTrades.toLocaleString()} total transactions upstream).\n`);
+  } catch (error) {
+    await rm(stagedOutput, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function validateGovernmentSnapshot({ index, recent, meta, leaderboard }) {
+  if (new Set(index.map((filer) => filer.id)).size !== index.length) throw new Error("Government snapshot contains duplicate filer IDs");
+  if (leaderboard.entries.length !== index.length) throw new Error("Government leaderboard does not cover every filer");
+  if (meta.totals.filers !== index.length || meta.totals.recentLoaded !== recent.length) throw new Error("Government metadata totals do not match snapshot files");
+  if (index.some((filer) => !filer.latestTransactionDate || filer.loadedTradeCount < 0)) throw new Error("Government filer summary is incomplete");
+  if (recent.some((trade) => !trade.filing_date || !trade.doc_url)) throw new Error("Government recent feed contains an unverifiable record");
+}
+
+async function main() {
+  const temp = await mkdtemp(path.join(tmpdir(), "tide-government-"));
+  try {
+    const commit = await cloneUpstream(temp);
+    const dataDir = path.join(temp, "public", "data");
+    const [filers, stats, recent, legislators] = await Promise.all([
+      readJson(path.join(dataDir, "filers.json")),
+      readJson(path.join(dataDir, "stats.json")),
+      readJson(path.join(dataDir, "trades.json")),
+      currentLegislators(),
+    ]);
+    const latestDate = new Date(`${stats.dateRange?.to}T00:00:00Z`).getTime();
+    if (!Array.isArray(filers) || filers.length < 350) throw new Error(`Upstream filer universe unexpectedly small: ${filers?.length ?? 0}`);
+    if (!Array.isArray(recent) || recent.length < 4_000) throw new Error(`Upstream recent trade set unexpectedly small: ${recent?.length ?? 0}`);
+    if (!latestDate || Date.now() - latestDate > 21 * 86_400_000) throw new Error(`Upstream disclosure feed is stale: ${stats.dateRange?.to ?? "unknown"}`);
+
+    const byBioguide = new Map(legislators.map((member) => [member.id.bioguide, member]));
+    const byName = new Map(legislators.map((member) => [normalizeName(`${member.name.first} ${member.name.middle ?? ""} ${member.name.last}`), member]));
+    const enriched = filers.map((filer) => enrichFiler(filer, currentMemberFor(filer, byBioguide, byName)));
+    await writeGovernmentSnapshot({ enriched, dataDir, recent, stats, commit });
   } finally {
     await rm(temp, { recursive: true, force: true });
   }

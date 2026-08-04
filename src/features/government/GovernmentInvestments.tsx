@@ -1,117 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { GovernmentRepository } from "@/src/application/ports/repositories";
 import { StockMark, Tag } from "@/src/components/ui";
 import { GovernmentLeaderboard } from "@/src/features/government/GovernmentLeaderboard";
+import { useGovernmentInvestments } from "@/src/features/government/useGovernmentInvestments";
+import type { ActionFilter, BranchFilter, TimeFilter, UniverseFilter } from "@/src/features/government/governmentViewModel";
 import {
-  buildExposureSignals,
-  filerStats,
   tradeAction,
   type GovernmentFiler,
-  type GovernmentLeaderboardDataset,
   type GovernmentMeta,
-  type GovernmentProfile,
   type GovernmentTrade,
 } from "@/src/domain/government";
 
-type ActionFilter = "all" | "purchase" | "sale" | "exchange" | "other";
-type UniverseFilter = "current" | "recent" | "all" | "archive";
-type BranchFilter = "all" | "house" | "senate" | "executive";
-type TimeFilter = "1Y" | "3Y" | "5Y" | "ALL";
-
 export function GovernmentInvestments({ onSelect, repository }: { onSelect: (symbol: string) => void; repository: GovernmentRepository }) {
-  const [meta, setMeta] = useState<GovernmentMeta | null>(null);
-  const [filers, setFilers] = useState<GovernmentFiler[]>([]);
-  const [recent, setRecent] = useState<GovernmentTrade[]>([]);
-  const [leaderboard, setLeaderboard] = useState<GovernmentLeaderboardDataset | null>(null);
-  const [profile, setProfile] = useState<GovernmentProfile | null>(null);
-  const [filerId, setFilerId] = useState("house_nancy_pelosi");
-  const [directoryQuery, setDirectoryQuery] = useState("");
-  const [universeFilter, setUniverseFilter] = useState<UniverseFilter>("current");
-  const [branchFilter, setBranchFilter] = useState<BranchFilter>("all");
-  const [directoryOpen, setDirectoryOpen] = useState(false);
-  const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("3Y");
-  const [tradeQuery, setTradeQuery] = useState("");
-  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const profileFocusRequested = useRef(false);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([repository.loadMeta(), repository.loadIndex(), repository.loadRecent(), repository.loadLeaderboard()])
-      .then(([nextMeta, nextFilers, nextRecent, nextLeaderboard]) => { if (active) { setMeta(nextMeta); setFilers(nextFilers); setRecent(nextRecent); setLeaderboard(nextLeaderboard); } })
-      .catch(() => { if (active) setFailed(true); });
-    return () => { active = false; };
-  }, [repository]);
-
-  useEffect(() => {
-    let active = true;
-    repository.loadProfile(filerId).then((payload) => { if (active) setProfile(payload); }).catch(() => { if (active) setFailed(true); });
-    return () => { active = false; };
-  }, [filerId, repository]);
-
-  useEffect(() => {
-    if (!profile || !profileFocusRequested.current) return;
-    profileFocusRequested.current = false;
-    requestAnimationFrame(() => document.querySelector(".official-profile")?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }, [profile]);
-
-  const recentCutoff = useMemo(() => {
-    const latest = filers.reduce((value, filer) => filer.latestTransactionDate > value ? filer.latestTransactionDate : value, "0000-01-01");
-    const date = new Date(`${latest}T00:00:00Z`);
-    date.setUTCFullYear(date.getUTCFullYear() - 2);
-    return date.getTime();
-  }, [filers]);
-  const directory = useMemo(() => filers.filter((filer) => {
-    const latestMs = new Date(`${filer.latestTransactionDate}T00:00:00Z`).getTime();
-    if (universeFilter === "current" && filer.active !== true) return false;
-    if (universeFilter === "recent" && latestMs < recentCutoff) return false;
-    if (universeFilter === "archive" && filer.active !== false) return false;
-    if (branchFilter === "executive" && filer.branch !== "executive") return false;
-    if (branchFilter !== "all" && branchFilter !== "executive" && filer.chamber !== branchFilter) return false;
-    return matchesSearch(`${filer.full_name} ${filer.state ?? ""} ${filer.office ?? ""} ${filer.agency ?? ""}`, directoryQuery);
-  }).sort((a, b) => b.latestTransactionDate.localeCompare(a.latestTransactionDate) || b.trade_count - a.trade_count), [branchFilter, directoryQuery, filers, recentCutoff, universeFilter]);
-
-  const exposureSignals = useMemo(() => buildExposureSignals(profile?.trades ?? []), [profile]);
-  const effectiveTicker = selectedTicker && exposureSignals.some((signal) => signal.ticker === selectedTicker) ? selectedTicker : exposureSignals[0]?.ticker ?? null;
-  const selectedExposure = exposureSignals.find((signal) => signal.ticker === effectiveTicker) ?? null;
-  const filteredTrades = useMemo(() => {
-    if (!profile) return [];
-    const latestDate = profile.trades[0]?.transaction_date ?? new Date().toISOString().slice(0, 10);
-    const cutoff = timeCutoff(latestDate, timeFilter);
-    return profile.trades.filter((trade) => {
-      const action = tradeAction(trade);
-      return trade.transaction_date >= cutoff
-        && (actionFilter === "all" || action === actionFilter)
-        && `${trade.ticker ?? ""} ${trade.asset_name} ${trade.owner ?? ""}`.toLowerCase().includes(tradeQuery.toLowerCase());
-    });
-  }, [actionFilter, profile, timeFilter, tradeQuery]);
-  const globalActivity = useMemo(() => recent.slice(0, 8), [recent]);
-
-  if (!meta || !filers.length || !profile || !leaderboard) return <IntelligenceLoading failed={failed} />;
-
-  const official = filers.find((filer) => filer.id === profile.filer.id) ?? profile.filer;
-  const stats = filerStats(profile);
-  const currentCount = filers.filter((filer) => filer.active === true).length;
-  const lateRate = meta.disclosureLag.tradesWithLag ? (meta.disclosureLag.lateCount / meta.disclosureLag.tradesWithLag) * 100 : 0;
-  const chooseFiler = (id: string) => {
-    setFilerId(id);
-    setSelectedTicker(null);
-    setActionFilter("all");
-    setTradeQuery("");
-    setDirectoryOpen(false);
-  };
-  const chooseRankedFiler = (id: string) => {
-    if (id === official.id) {
-      document.querySelector(".official-profile")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    profileFocusRequested.current = true;
-    chooseFiler(id);
-  };
+  const viewModel = useGovernmentInvestments(repository);
+  if (!viewModel.ready || !viewModel.meta || !viewModel.profile || !viewModel.leaderboard || !viewModel.official || !viewModel.stats) return <IntelligenceLoading failed={viewModel.snapshotFailed || viewModel.profileFailed} />;
+  const { meta, leaderboard, profile, official, stats, currentCount, lateRate, directory, exposureSignals, effectiveTicker, selectedExposure, filteredTrades, globalActivity, directoryQuery, universeFilter, branchFilter, directoryOpen, actionFilter, timeFilter, tradeQuery, setDirectoryQuery, setUniverseFilter, setBranchFilter, setDirectoryOpen, setActionFilter, setTimeFilter, setTradeQuery, setSelectedTicker, chooseFiler, chooseRankedFiler, profileFailed } = viewModel;
 
   return <div className="view-stack government-view">
     <section className="section-hero intelligence-hero intelligence-hero--government">
@@ -120,6 +25,8 @@ export function GovernmentInvestments({ onSelect, repository }: { onSelect: (sym
     </section>
 
     <GovernmentLeaderboard dataset={leaderboard} onChoose={chooseRankedFiler} />
+
+    {profileFailed && <div className="inline-error" role="alert"><b>That disclosure profile could not be loaded.</b><span>The previously selected official remains visible. Try another official or refresh the page.</span></div>}
 
     <section className="intel-directory panel official-finder">
       <div className="intel-directory__bar">
@@ -196,18 +103,16 @@ function TradeEvent({ trade }: { trade: GovernmentTrade }) {
 
 function Metric({ label, value, note }: { label: string; value: string; note: string }) { return <article><span>{label}</span><strong>{value}</strong><small>{note}</small></article>; }
 function IntelligenceLoading({ failed }: { failed: boolean }) { return <div className="panel intelligence-loading"><span>{failed ? "!" : "···"}</span><h2>{failed ? "Disclosure data could not be loaded" : "Reading public disclosures"}</h2><p>{failed ? "Refresh to retry the static research snapshot." : "Indexing officials, transaction ranges, and source documents."}</p></div>; }
-function timeCutoff(latest: string, range: TimeFilter) { if (range === "ALL") return "0000-01-01"; const date = new Date(`${latest}T00:00:00Z`); date.setUTCFullYear(date.getUTCFullYear() - Number.parseInt(range)); return date.toISOString().slice(0, 10); }
 function ownerLabel(value: string | null) { return ({ SP: "Spouse", JT: "Joint", DC: "Dependent", SELF: "Self", self: "Self", spouse: "Spouse", joint: "Joint" } as Record<string, string>)[value ?? ""] ?? value ?? "Unspecified"; }
 function officialLabel(filer: GovernmentFiler) { if (filer.branch === "executive") return filer.agency ?? filer.office ?? "Executive branch"; return `${filer.chamber ? titleCase(filer.chamber) : "Congress"} · ${filer.state ?? "—"}${filer.district ? `-${String(filer.district).padStart(2, "0")}` : ""}`; }
 function partyName(value: GovernmentFiler["party"]) { return value === "D" ? "Democratic" : value === "R" ? "Republican" : value === "I" ? "Independent" : "Unaffiliated"; }
 function partyClass(value: GovernmentFiler["party"]) { return value === "D" ? "democratic" : value === "R" ? "republican" : "independent"; }
 function sourcePortal(filer: GovernmentFiler, meta: GovernmentMeta) { return filer.branch === "executive" ? meta.officialSources.executive : filer.chamber === "senate" ? meta.officialSources.senate : meta.officialSources.house; }
 function actionTone(action: ReturnType<typeof tradeAction>): "good" | "warn" | "blue" | "neutral" { return action === "purchase" ? "good" : action === "sale" ? "warn" : action === "exchange" ? "blue" : "neutral"; }
-function shortDate(value: string) {
+function shortDate(value: string | null) {
   const date = new Date(`${value}T00:00:00Z`);
   if (!value || !Number.isFinite(date.getTime())) return "Unknown date";
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date);
 }
 function compactMoney(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(value); }
 function titleCase(value: string) { return value ? `${value[0].toUpperCase()}${value.slice(1)}` : value; }
-function matchesSearch(value: string, query: string) { const haystack = value.toLowerCase(); return query.toLowerCase().trim().split(/\s+/).filter(Boolean).every((term) => haystack.includes(term)); }

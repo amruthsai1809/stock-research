@@ -257,7 +257,7 @@ export function InteractivePriceChart({
       <div
         ref={hostRef}
         className="chart-stage"
-        role="img"
+        role="group"
         aria-label={`${symbol} interactive ${range} price chart. Move the pointer across the chart for exact daily price, OHLC, and volume.`}
       />
       <div className="chart-help"><span><i className="legend-swatch legend-swatch--coral" />{style === "candles" ? "Daily OHLC" : "Adjusted close"}</span><small>Move to inspect · drag to pan · scroll to zoom</small></div>

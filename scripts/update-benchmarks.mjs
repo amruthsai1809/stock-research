@@ -1,4 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { writeJsonAtomic } from "./lib/atomicOutput.mjs";
 
 const OUTPUT = new URL("../public/data/benchmark-data.json", import.meta.url);
 const benchmarks = [
@@ -32,5 +34,5 @@ for (const benchmark of benchmarks) {
   console.log(`Updated benchmark ${benchmark.symbol}`);
 }
 await mkdir(new URL("../public/data/", import.meta.url), { recursive: true });
-await writeFile(OUTPUT, `${JSON.stringify({ generatedAt: new Date().toISOString(), source: "Yahoo Finance chart data (community endpoint; end-of-day snapshot)", benchmarks: instruments })}\n`);
+await writeJsonAtomic(fileURLToPath(OUTPUT), { generatedAt: new Date().toISOString(), source: "Yahoo Finance chart data (community endpoint; end-of-day snapshot)", benchmarks: instruments });
 console.log(`Wrote benchmark-data.json (${instruments.length} benchmarks)`);

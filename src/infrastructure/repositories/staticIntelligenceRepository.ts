@@ -2,6 +2,7 @@ import type { GovernmentRepository, InstitutionalRepository } from "@/src/applic
 import type { GovernmentFiler, GovernmentLeaderboardDataset, GovernmentMeta, GovernmentProfile, GovernmentTrade } from "@/src/domain/government";
 import type { InstitutionalIndex, InstitutionalManager } from "@/src/domain/institutional";
 import { parseInstitutionalIndex, parseInstitutionalManager } from "@/src/shared/contracts/institutionalData";
+import { parseGovernmentIndex, parseGovernmentLeaderboard, parseGovernmentMeta, parseGovernmentProfile, parseGovernmentRecent } from "@/src/shared/contracts/governmentData";
 
 async function loadJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -35,29 +36,29 @@ export class StaticGovernmentRepository implements GovernmentRepository {
   private readonly profiles = new Map<string, GovernmentProfile>();
 
   async loadMeta() {
-    this.meta ??= await loadJson<GovernmentMeta>("./data/government/meta.json");
+    this.meta ??= parseGovernmentMeta(await loadJson<unknown>("./data/government/meta.json"));
     return this.meta;
   }
 
   async loadIndex() {
-    this.index ??= await loadJson<GovernmentFiler[]>("./data/government/index.json");
+    this.index ??= parseGovernmentIndex(await loadJson<unknown>("./data/government/index.json"));
     return this.index;
   }
 
   async loadRecent() {
-    this.recent ??= await loadJson<GovernmentTrade[]>("./data/government/recent.json");
+    this.recent ??= parseGovernmentRecent(await loadJson<unknown>("./data/government/recent.json"));
     return this.recent;
   }
 
   async loadLeaderboard() {
-    this.leaderboard ??= await loadJson<GovernmentLeaderboardDataset>("./data/government/leaderboard.json");
+    this.leaderboard ??= parseGovernmentLeaderboard(await loadJson<unknown>("./data/government/leaderboard.json"));
     return this.leaderboard;
   }
 
   async loadProfile(id: string) {
     const cached = this.profiles.get(id);
     if (cached) return cached;
-    const profile = await loadJson<GovernmentProfile>(`./data/government/profiles/${encodeURIComponent(id)}.json`);
+    const profile = parseGovernmentProfile(await loadJson<unknown>(`./data/government/profiles/${encodeURIComponent(id)}.json`));
     this.profiles.set(id, profile);
     return profile;
   }

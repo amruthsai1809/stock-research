@@ -16,37 +16,48 @@
     "data:signals": "node scripts/update-research-signals.mjs",
     "data:update:all": "npm run data:update && npm run data:benchmarks && npm run data:intelligence && npm run data:signals",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run build && node --test tests/*.test.mjs",
+    "test:unit": "vitest run --coverage",
+    "test:data": "node --test tests/*.test.mjs",
+    "test:e2e": "playwright test",
+    "test": "npm run typecheck && npm run test:unit && npm run build && npm run bundle:check && npm run test:data",
+    "bundle:check": "node scripts/check-bundle-budget.mjs",
+    "security:check": "npm audit --omit=dev --audit-level=high",
+    "quality": "npm run lint && npm test && npm run security:check",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
     "lightweight-charts": "5.2.0",
     "next": "16.2.12",
     "pdfjs-dist": "^5.4.149",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "zod": "^4.1.5"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
+    "@axe-core/playwright": "^4.12.1",
+    "@cloudflare/vite-plugin": "^1.50.0",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
+    "react-server-dom-webpack": "^19.2.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.118.0"
   },
   "overrides": {
     "postcss": "8.5.25",
-    "sharp": "0.35.3"
+    "sharp": "0.35.3",
+    "undici": "7.29.0"
   },
   "type": "module"
 }

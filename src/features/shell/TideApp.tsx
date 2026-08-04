@@ -1,23 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { ApplicationServices } from "@/src/application/ports/repositories";
 import type { AnalyzedStock, MarketDataset } from "@/src/domain/stock";
 import { analyzeUniverse } from "@/src/domain/analytics";
 import { StockMark, Tag } from "@/src/components/ui";
-import { Discover } from "@/src/features/discover/Discover";
-import { DipFinder } from "@/src/features/dip-finder/DipFinder";
-import { CompanyResearch } from "@/src/features/company/CompanyResearch";
-import { Screener } from "@/src/features/screener/Screener";
-import { Compare } from "@/src/features/compare/Compare";
-import { ValuationLab } from "@/src/features/valuation/ValuationLab";
-import { FilingIntel } from "@/src/features/filings/FilingIntel";
-import { PortfolioLab } from "@/src/features/portfolio/PortfolioLab";
-import { InstitutionalHoldings } from "@/src/features/institutional/InstitutionalHoldings";
-import { GovernmentInvestments } from "@/src/features/government/GovernmentInvestments";
-import { StockIntelligence } from "@/src/modules/stock-intelligence/presentation/StockIntelligence";
 import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
 import { navigation, readSymbol, readView, writeView, type AppView } from "@/src/features/shell/navigation";
+
+const Discover = lazy(() => import("@/src/features/discover/Discover").then((module) => ({ default: module.Discover })));
+const DipFinder = lazy(() => import("@/src/features/dip-finder/DipFinder").then((module) => ({ default: module.DipFinder })));
+const CompanyResearch = lazy(() => import("@/src/features/company/CompanyResearch").then((module) => ({ default: module.CompanyResearch })));
+const Screener = lazy(() => import("@/src/features/screener/Screener").then((module) => ({ default: module.Screener })));
+const Compare = lazy(() => import("@/src/features/compare/Compare").then((module) => ({ default: module.Compare })));
+const ValuationLab = lazy(() => import("@/src/features/valuation/ValuationLab").then((module) => ({ default: module.ValuationLab })));
+const FilingIntel = lazy(() => import("@/src/features/filings/FilingIntel").then((module) => ({ default: module.FilingIntel })));
+const PortfolioLab = lazy(() => import("@/src/features/portfolio/PortfolioLab").then((module) => ({ default: module.PortfolioLab })));
+const InstitutionalHoldings = lazy(() => import("@/src/features/institutional/InstitutionalHoldings").then((module) => ({ default: module.InstitutionalHoldings })));
+const GovernmentInvestments = lazy(() => import("@/src/features/government/GovernmentInvestments").then((module) => ({ default: module.GovernmentInvestments })));
+const StockIntelligence = lazy(() => import("@/src/modules/stock-intelligence/presentation/StockIntelligence").then((module) => ({ default: module.StockIntelligence })));
 
 export function TideApp({ services }: { services: ApplicationServices }) {
   const [dataset, setDataset] = useState<MarketDataset | null>(null);
@@ -129,7 +130,7 @@ export function TideApp({ services }: { services: ApplicationServices }) {
 
       <div className="data-banner"><span>Research snapshot</span><p>End-of-day prices and official filings · No login · No paid data service · Not investment advice</p><button onClick={() => navigate("filings")}>Inspect sources →</button></div>
 
-      <main className="content">
+      <main className="content"><Suspense fallback={<FeatureLoading />}>
         {view === "discover" && <Discover stocks={stocks} onSelect={selectStock} onOpenDipFinder={() => navigate("dips")} />}
         {view === "dips" && <DipFinder stocks={stocks} onSelect={selectStock} watchlist={watchlist} onToggleWatchlist={toggleWatchlist} />}
         {view === "company" && selectedStock && <CompanyResearch stock={selectedStock} researchSignal={researchSignals?.signals[selectedStock.symbol]} isWatched={watchlist.includes(selectedStock.symbol)} onToggleWatchlist={toggleWatchlist} onOpenValuation={() => navigate("valuation")} />}
@@ -141,7 +142,7 @@ export function TideApp({ services }: { services: ApplicationServices }) {
         {view === "portfolio" && <PortfolioLab stocks={stocks} onSelect={selectStock} benchmarkRepository={services.benchmarkRepository} />}
         {view === "institutional" && <InstitutionalHoldings onSelect={selectStock} repository={services.institutionalRepository} />}
         {view === "government" && <GovernmentInvestments onSelect={selectStock} repository={services.governmentRepository} />}
-      </main>
+      </Suspense></main>
 
       <footer className="site-footer"><span><b>TIDE</b> · Open-source equity research</span><span>Data as of {formatDate(dataset.priceAsOf)} · Not investment advice</span></footer>
     </div>
@@ -154,6 +155,10 @@ export function TideApp({ services }: { services: ApplicationServices }) {
 
 function ProductLoading({ failed }: { failed: boolean }) {
   return <main className="product-loading"><div className="product-loading__brand"><span className="brand__mark">T</span><b>TIDE</b></div>{failed ? <><h1>Research data could not be loaded.</h1><p>Check your connection and refresh the page.</p><button className="primary-button" onClick={() => window.location.reload()}>Try again</button></> : <><div className="product-loading__pulse"><i /><i /><i /></div><h1>Preparing the research desk</h1><p>Loading end-of-day prices and SEC-derived fundamentals…</p></>}</main>;
+}
+
+function FeatureLoading() {
+  return <section className="panel feature-loading" aria-live="polite" aria-busy="true"><span /><div><b>Opening research workspace</b><small>Loading only the tools needed for this view.</small></div></section>;
 }
 
 function SearchDialog({ stocks, onSelect, onClose }: { stocks: AnalyzedStock[]; onSelect: (symbol: string) => void; onClose: () => void }) {

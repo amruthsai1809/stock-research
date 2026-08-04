@@ -1,5 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { writeJsonAtomic } from "./lib/atomicOutput.mjs";
 import process from "node:process";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -295,7 +296,7 @@ async function main() {
     sources: { insiders: "https://www.sec.gov/edgar/sec-api-documentation", institutions: "https://www.sec.gov/divisions/investment/13ffaq", analysts: "https://finance.yahoo.com/" },
     signals,
   };
-  await writeFile(OUTPUT_PATH, `${JSON.stringify(output, null, 2)}\n`, "utf8");
+  await writeJsonAtomic(OUTPUT_PATH, output, { pretty: true });
   console.log(`[signals] wrote ${OUTPUT_PATH}`);
 }
 

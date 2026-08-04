@@ -1,4 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { writeJsonAtomic } from "./lib/atomicOutput.mjs";
 import { companies } from "./company-registry.mjs";
 
 const OUTPUT = new URL("../public/data/market-data.json", import.meta.url);
@@ -264,7 +266,7 @@ async function main() {
     stocks,
   };
   await mkdir(new URL("../public/data/", import.meta.url), { recursive: true });
-  await writeFile(OUTPUT, `${JSON.stringify(payload)}\n`);
+  await writeJsonAtomic(fileURLToPath(OUTPUT), payload);
   process.stdout.write(`Wrote ${stocks.length} companies to ${OUTPUT.pathname}\n`);
 }
 

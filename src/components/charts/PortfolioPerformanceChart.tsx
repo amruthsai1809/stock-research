@@ -60,7 +60,7 @@ export function PortfolioPerformanceChart({ points, benchmark }: { points: Portf
       <b><i className="legend-dot legend-dot--benchmark" />{benchmark} {formatReturn(active.benchmark)}</b>
       {lead != null && <small className={lead >= 0 ? "positive" : "negative"}>{lead >= 0 ? "Ahead" : "Behind"} by {Math.abs(lead).toFixed(1)} pts</small>}
     </div>
-    <div ref={hostRef} className="chart-stage" role="img" aria-label={`Interactive cash-flow-matched portfolio return compared with ${benchmark}. Move the pointer for exact values.`} />
+    <div ref={hostRef} className="chart-stage" role="group" aria-label={`Interactive cash-flow-matched portfolio return compared with ${benchmark}. Move the pointer for exact values.`} />
     <div className="chart-help"><span>Each deposit is invested into the benchmark on the same date</span><small>Move to inspect · drag to pan · scroll to zoom</small></div>
   </div>;
 }

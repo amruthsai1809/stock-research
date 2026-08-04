@@ -1,0 +1,122 @@
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
+
+const errorsByPage = new WeakMap<Page, string[]>();
+
+test.beforeEach(async ({ page }) => {
+  const pageErrors: string[] = [];
+  errorsByPage.set(page, pageErrors);
+  page.on("pageerror", (error) => pageErrors.push(String(error)));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: /Today's market, explained/i })).toBeVisible();
+});
+
+test.afterEach(async ({ page }) => {
+  expect(errorsByPage.get(page) ?? []).toEqual([]);
+});
+
+test("five-year charts render their complete selected histories", async ({ page }) => {
+  await page.getByLabel("Tesla price range").getByRole("button", { name: "5Y" }).click();
+  const discoverReadout = page.locator("[data-chart-range='5Y']").first();
+  await expect(discoverReadout).toHaveAttribute("data-session-count", /1[0-9]{3}/);
+  await expectCompleteRange(discoverReadout);
+  const discoverChart = page.locator(".interactive-price-chart").filter({ has: page.getByLabel("Tesla price range") });
+  const discoverPlot = discoverChart.locator(".chart-stage");
+  const discoverPlotBox = await discoverPlot.boundingBox();
+  expect(discoverPlotBox).not.toBeNull();
+  await page.mouse.move(discoverPlotBox!.x + discoverPlotBox!.width * 0.35, discoverPlotBox!.y + discoverPlotBox!.height * 0.45);
+  await expect(discoverChart.locator(".chart-readout__quote")).toContainText("Pointed session");
+
+  await page.getByRole("button", { name: /Compare/ }).click();
+  await expect(page.getByRole("heading", { name: /Compare the business and the price/i })).toBeVisible();
+  await page.getByLabel("Comparison period").getByRole("button", { name: "5Y" }).click();
+  const compareReadout = page.locator("[data-chart-range='5Y']").first();
+  await expect(compareReadout).toHaveAttribute("data-session-count", /1[0-9]{3}/);
+  await expectCompleteRange(compareReadout);
+});
+
+test("public-official rankings and inferred positions sort by their selected amounts", async ({ page }) => {
+  await page.getByRole("button", { name: /Public officials/ }).click();
+  await expect(page.getByRole("heading", { name: "Who has had the strongest disclosed activity?" })).toBeVisible();
+  await page.getByRole("button", { name: "Largest activity" }).click();
+  await expect(page.locator(".leaderboard-podium-card").first()).toContainText("Nancy Pelosi");
+
+  const amounts = await page.locator(".exposure-grid > button > strong").allTextContents();
+  const numericAmounts = amounts.map(parseCompactMoney);
+  expect(numericAmounts).toEqual([...numericAmounts].sort((a, b) => b - a));
+  await expect(page.locator(".exposure-grid > button").first()).toContainText("AB");
+
+  await expectAccessible(page);
+});
+
+test("archive lifecycle, private portfolio import, search, and theme controls remain usable", async ({ page }) => {
+  await page.getByRole("button", { name: /13F Explorer/ }).click();
+  await expect(page.getByRole("heading", { name: /Trace conviction/i })).toBeVisible();
+  await page.getByRole("button", { name: "Browse all managers" }).click();
+  await page.getByRole("button", { name: /Closed \/ historical/ }).click();
+  await page.getByRole("button", { name: /Scion Asset Management/ }).click();
+  await expect(page.getByRole("status")).toContainText("not an active reporting manager");
+
+  await page.getByRole("button", { name: /My Portfolio/ }).click();
+  await page.locator("input[type='file']").setInputFiles("tests/fixtures/sample-portfolio.csv");
+  await expect(page.getByText("sample-portfolio.csv · CSV", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Performance, on equal footing" })).toBeVisible();
+
+  await page.keyboard.press("Control+K");
+  const searchDialog = page.getByRole("dialog", { name: "Search companies" });
+  await expect(searchDialog).toBeVisible();
+  await page.getByPlaceholder(/Search ticker/).fill("Microsoft");
+  await searchDialog.getByRole("button", { name: /MSFT/ }).click();
+  await expect(page.getByRole("heading", { name: /Microsoft/i }).first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Switch to light theme" }).click();
+});
+
+test("every primary research feature loads through the application shell", async ({ page }) => {
+  const primaryNavigation = page.getByRole("navigation", { name: "Primary navigation" });
+  const destinations: Array<[RegExp, RegExp]> = [
+    [/Dip Finder/, /^Dip Finder$/],
+    [/Screener/, /Build a better shortlist/i],
+    [/Valuation Lab/, /Make expectations visible/i],
+    [/Company filings/, /The filing is the source of truth/i],
+    [/Stock Intelligence/, /A score you can interrogate/i],
+  ];
+
+  for (const [navigationName, headingName] of destinations) {
+    await primaryNavigation.getByRole("button", { name: navigationName }).click();
+    await expect(page.getByRole("heading", { name: headingName }).first()).toBeVisible();
+  }
+
+  await primaryNavigation.getByRole("button", { name: /Discover/ }).click();
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expectAccessible(page);
+});
+
+async function expectCompleteRange(locator: ReturnType<Page["locator"]>) {
+  const attributes = await locator.evaluate((element) => ({ start: element.getAttribute("data-range-start"), rendered: element.getAttribute("data-rendered-start") }));
+  expect(attributes.start).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(attributes.rendered).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(attributes.rendered! <= attributes.start!).toBe(true);
+  expect(Number(attributes.start!.slice(0, 4))).toBeLessThanOrEqual(2022);
+}
+
+async function expectAccessible(page: Page) {
+  const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+  const severe = result.violations
+    .filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))
+    .map((violation) => ({
+      id: violation.id,
+      impact: violation.impact,
+      nodes: violation.nodes.map((node) => node.target.join(" > ")),
+    }));
+  expect(severe).toEqual([]);
+}
+
+function parseCompactMoney(value: string) {
+  const match = value.replace(/[$,]/g, "").match(/^([\d.]+)([KMBT])?$/i);
+  if (!match) throw new Error(`Unrecognized compact amount: ${value}`);
+  return Number(match[1]) * ({ K: 1e3, M: 1e6, B: 1e9, T: 1e12 }[match[2]?.toUpperCase() as "K" | "M" | "B" | "T"] ?? 1);
+}

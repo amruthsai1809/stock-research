@@ -1,6 +1,7 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { governmentLeaderboardDataset, summarizeGovernmentFiler } from "./lib/governmentLeaderboard.mjs";
+import { writeJsonAtomic } from "./lib/atomicOutput.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const GOVERNMENT_DIR = path.join(ROOT, "public", "data", "government");
@@ -14,5 +15,5 @@ for (const filer of index) {
 }
 
 const dataset = governmentLeaderboardDataset(entries, { asOf: meta.dateRange.to });
-await writeFile(path.join(GOVERNMENT_DIR, "leaderboard.json"), `${JSON.stringify(dataset)}\n`);
+await writeJsonAtomic(path.join(GOVERNMENT_DIR, "leaderboard.json"), dataset);
 process.stdout.write(`Wrote ${entries.length} public-official leaderboard entries.\n`);

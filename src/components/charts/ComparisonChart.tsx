@@ -108,7 +108,7 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
         <div className="chart-range" aria-label="Comparison period">{(["3M", "1Y", "3Y", "5Y"] as CompareRange[]).map((item) => <button key={item} className={range === item ? "is-active" : ""} aria-pressed={range === item} onClick={() => { setHover(null); setRange(item); }}>{item}</button>)}</div>
       </div>
       <div className="chart-period-readout" data-chart-range={range} data-range-start={commonStart} data-range-end={leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? ""} data-rendered-start={renderedRange?.start ?? ""} data-rendered-end={renderedRange?.end ?? ""} data-session-count={Math.min(leftVisible.length, rightVisible.length)}><b>{range}</b><span>{priceRangeLabel(leftVisible.length <= rightVisible.length ? leftVisible : rightVisible)}</span><em className={coversSelectedRange(renderedRange, commonStart, leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? "") ? "is-complete" : ""}>{coversSelectedRange(renderedRange, commonStart, leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? "") ? "Full selected history" : "Zoomed view"}</em></div>
-      <div ref={hostRef} className="chart-stage" role="img" aria-label={`Interactive normalized price performance for ${left.name} and ${right.name}. Move the pointer for exact returns.`} />
+      <div ref={hostRef} className="chart-stage" role="group" aria-label={`Interactive normalized price performance for ${left.name} and ${right.name}. Move the pointer for exact returns.`} />
       <div className="chart-help"><span>Return from the beginning of the selected period</span><small>Move to inspect · drag to pan · scroll to zoom</small></div>
     </div>
   );
