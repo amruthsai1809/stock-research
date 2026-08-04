@@ -207,7 +207,7 @@ export function buildExposureSignals(trades: GovernmentTrade[]): ExposureSignal[
       trades: [...episode].reverse(),
     });
   }
-  return signals.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity) || b.estimatedNetActivity - a.estimatedNetActivity);
+  return signals.sort((a, b) => b.estimatedNetActivity - a.estimatedNetActivity || b.lastActivity.localeCompare(a.lastActivity));
 }
 
 function exposureAssetName(ticker: string, trades: GovernmentTrade[]) {
