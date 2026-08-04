@@ -37,7 +37,7 @@ The scripts directory is the ingestion boundary:
 
 - `update-data.mjs` normalizes price history and issuer-specific SEC XBRL concepts.
 - `update-institutional.mjs` validates manager CIK identities, combines Form 13F originals and amendments, derives lifecycle state, and emits a small directory plus lazy-loaded manager profiles.
-- `update-government.mjs` normalizes House Clerk, Senate eFD, and OGE records, refreshes current-member metadata, and emits a directory, recent feed, metadata, and lazy-loaded filer profiles.
+- `update-government.mjs` normalizes House Clerk, Senate eFD, and OGE records, refreshes current-member metadata, and emits a directory, recent feed, methodology-aware leaderboard, metadata, and lazy-loaded filer profiles. The ranking policy is shared with `build-government-leaderboard.mjs` so existing snapshots can be rebuilt without another network ingestion.
 - `update-intelligence.mjs` is the orchestration entry point for both intelligence pipelines.
 - `update-research-signals.mjs` derives recent SEC Form 4/4-A open-market activity and active-manager 13F breadth for the covered stock universe.
 - Generated records retain report dates and source filing links so the UI can expose provenance.

@@ -11,6 +11,7 @@
     "start": "vinext start",
     "data:update": "node scripts/update-data.mjs",
     "data:intelligence": "node scripts/update-intelligence.mjs",
+    "data:government:leaderboard": "node scripts/build-government-leaderboard.mjs",
     "data:benchmarks": "node scripts/update-benchmarks.mjs",
     "data:signals": "node scripts/update-research-signals.mjs",
     "data:update:all": "npm run data:update && npm run data:benchmarks && npm run data:intelligence && npm run data:signals",

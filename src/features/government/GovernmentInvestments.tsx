@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import type { GovernmentRepository } from "@/src/application/ports/repositories";
 import { StockMark, Tag } from "@/src/components/ui";
+import { GovernmentLeaderboard } from "@/src/features/government/GovernmentLeaderboard";
 import {
   buildExposureSignals,
   filerStats,
   tradeAction,
   type GovernmentFiler,
+  type GovernmentLeaderboardDataset,
   type GovernmentMeta,
   type GovernmentProfile,
   type GovernmentTrade,
@@ -23,6 +25,7 @@ export function GovernmentInvestments({ onSelect, repository }: { onSelect: (sym
   const [meta, setMeta] = useState<GovernmentMeta | null>(null);
   const [filers, setFilers] = useState<GovernmentFiler[]>([]);
   const [recent, setRecent] = useState<GovernmentTrade[]>([]);
+  const [leaderboard, setLeaderboard] = useState<GovernmentLeaderboardDataset | null>(null);
   const [profile, setProfile] = useState<GovernmentProfile | null>(null);
   const [filerId, setFilerId] = useState("house_nancy_pelosi");
   const [directoryQuery, setDirectoryQuery] = useState("");
@@ -33,12 +36,13 @@ export function GovernmentInvestments({ onSelect, repository }: { onSelect: (sym
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("3Y");
   const [tradeQuery, setTradeQuery] = useState("");
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const profileFocusRequested = useRef(false);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
-    Promise.all([repository.loadMeta(), repository.loadIndex(), repository.loadRecent()])
-      .then(([nextMeta, nextFilers, nextRecent]) => { if (active) { setMeta(nextMeta); setFilers(nextFilers); setRecent(nextRecent); } })
+    Promise.all([repository.loadMeta(), repository.loadIndex(), repository.loadRecent(), repository.loadLeaderboard()])
+      .then(([nextMeta, nextFilers, nextRecent, nextLeaderboard]) => { if (active) { setMeta(nextMeta); setFilers(nextFilers); setRecent(nextRecent); setLeaderboard(nextLeaderboard); } })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
   }, [repository]);
@@ -48,6 +52,12 @@ export function GovernmentInvestments({ onSelect, repository }: { onSelect: (sym
     repository.loadProfile(filerId).then((payload) => { if (active) setProfile(payload); }).catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
   }, [filerId, repository]);
+
+  useEffect(() => {
+    if (!profile || !profileFocusRequested.current) return;
+    profileFocusRequested.current = false;
+    requestAnimationFrame(() => document.querySelector(".official-profile")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [profile]);
 
   const recentCutoff = useMemo(() => {
     const latest = filers.reduce((value, filer) => filer.latestTransactionDate > value ? filer.latestTransactionDate : value, "0000-01-01");
@@ -81,19 +91,26 @@ export function GovernmentInvestments({ onSelect, repository }: { onSelect: (sym
   }, [actionFilter, profile, timeFilter, tradeQuery]);
   const globalActivity = useMemo(() => recent.slice(0, 8), [recent]);
 
-  if (!meta || !filers.length || !profile) return <IntelligenceLoading failed={failed} />;
+  if (!meta || !filers.length || !profile || !leaderboard) return <IntelligenceLoading failed={failed} />;
 
   const official = filers.find((filer) => filer.id === profile.filer.id) ?? profile.filer;
   const stats = filerStats(profile);
   const currentCount = filers.filter((filer) => filer.active === true).length;
   const lateRate = meta.disclosureLag.tradesWithLag ? (meta.disclosureLag.lateCount / meta.disclosureLag.tradesWithLag) * 100 : 0;
   const chooseFiler = (id: string) => {
-    setProfile(null);
     setFilerId(id);
     setSelectedTicker(null);
     setActionFilter("all");
     setTradeQuery("");
     setDirectoryOpen(false);
+  };
+  const chooseRankedFiler = (id: string) => {
+    if (id === official.id) {
+      document.querySelector(".official-profile")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    profileFocusRequested.current = true;
+    chooseFiler(id);
   };
 
   return <div className="view-stack government-view">
@@ -101,6 +118,8 @@ export function GovernmentInvestments({ onSelect, repository }: { onSelect: (sym
       <div><span className="hero-panel__kicker"><i />Public disclosure intelligence</span><h1>Follow the filing.<br /><em>See the delay.</em></h1><p>Search congressional and executive-branch disclosures, reconstruct activity-derived exposure signals, and verify every transaction against its source document.</p></div>
       <aside className="disclosure-primer disclosure-primer--stats"><span className="eyebrow">National disclosure record</span><strong>{meta.totals.trades.toLocaleString()} transactions</strong><div><span>Filers</span><b>{meta.totals.filers}</b></div><div><span>Current lawmakers</span><b>{meta.totals.currentCongress}</b></div><div><span>Median reporting lag</span><b>{meta.disclosureLag.medianDaysToFile} days</b></div><small>Refreshed {shortDate(meta.dateRange.to)} · official House, Senate, and OGE records</small></aside>
     </section>
+
+    <GovernmentLeaderboard dataset={leaderboard} onChoose={chooseRankedFiler} />
 
     <section className="intel-directory panel official-finder">
       <div className="intel-directory__bar">

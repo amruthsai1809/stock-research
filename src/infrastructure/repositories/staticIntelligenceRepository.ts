@@ -1,5 +1,5 @@
 import type { GovernmentRepository, InstitutionalRepository } from "@/src/application/ports/repositories";
-import type { GovernmentFiler, GovernmentMeta, GovernmentProfile, GovernmentTrade } from "@/src/domain/government";
+import type { GovernmentFiler, GovernmentLeaderboardDataset, GovernmentMeta, GovernmentProfile, GovernmentTrade } from "@/src/domain/government";
 import type { InstitutionalIndex, InstitutionalManager } from "@/src/domain/institutional";
 import { parseInstitutionalIndex, parseInstitutionalManager } from "@/src/shared/contracts/institutionalData";
 
@@ -31,6 +31,7 @@ export class StaticGovernmentRepository implements GovernmentRepository {
   private meta: GovernmentMeta | null = null;
   private index: GovernmentFiler[] | null = null;
   private recent: GovernmentTrade[] | null = null;
+  private leaderboard: GovernmentLeaderboardDataset | null = null;
   private readonly profiles = new Map<string, GovernmentProfile>();
 
   async loadMeta() {
@@ -46,6 +47,11 @@ export class StaticGovernmentRepository implements GovernmentRepository {
   async loadRecent() {
     this.recent ??= await loadJson<GovernmentTrade[]>("./data/government/recent.json");
     return this.recent;
+  }
+
+  async loadLeaderboard() {
+    this.leaderboard ??= await loadJson<GovernmentLeaderboardDataset>("./data/government/leaderboard.json");
+    return this.leaderboard;
   }
 
   async loadProfile(id: string) {

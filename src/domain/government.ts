@@ -81,6 +81,53 @@ export type GovernmentMeta = {
   };
 };
 
+export type GovernmentLeaderboardConfidence = "high" | "medium" | "limited";
+
+export type GovernmentLeaderboardPurchase = {
+  ticker: string;
+  transactionDate: string;
+  return1Y: number;
+};
+
+export type GovernmentLeaderboardEntry = {
+  filerId: string;
+  fullName: string;
+  branch: GovernmentFiler["branch"];
+  chamber: GovernmentFiler["chamber"];
+  party: GovernmentFiler["party"];
+  state: string | null;
+  office: string | null;
+  agency: string | null;
+  photoUrl: string | null;
+  active: boolean | null;
+  latestTransactionDate: string;
+  totalTransactions: number;
+  recentTransactions: number;
+  disclosedActivity: number;
+  estimatedOpenActivity: number;
+  inferredPositions: number;
+  medianPurchaseReturn1Y: number | null;
+  averagePurchaseReturn1Y: number | null;
+  purchaseWinRate1Y: number | null;
+  reliabilityScore1Y: number | null;
+  medianReturnSincePurchase: number | null;
+  medianExcessSincePurchase: number | null;
+  performanceSample: number;
+  eligiblePurchases: number;
+  returnCoverage: number;
+  confidence: GovernmentLeaderboardConfidence;
+  historyTruncated: boolean;
+  bestPurchase: GovernmentLeaderboardPurchase | null;
+  worstPurchase: GovernmentLeaderboardPurchase | null;
+};
+
+export type GovernmentLeaderboardDataset = {
+  generatedAt: string;
+  asOf: string;
+  methodology: string;
+  entries: GovernmentLeaderboardEntry[];
+};
+
 export type ExposureSignal = {
   ticker: string;
   assetName: string;
@@ -114,6 +161,7 @@ export function buildExposureSignals(trades: GovernmentTrade[]): ExposureSignal[
   const staleCutoff = staleDate.toISOString().slice(0, 10);
   const byTicker = new Map<string, GovernmentTrade[]>();
   for (const trade of trades) {
+    if (!trade.transaction_date) continue;
     const ticker = trade.ticker?.trim().toUpperCase();
     if (!ticker || !/^[A-Z][A-Z0-9.-]{0,7}$/.test(ticker)) continue;
     const group = byTicker.get(ticker) ?? [];

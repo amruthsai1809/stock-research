@@ -12,7 +12,7 @@ TIDE is public, login-free, and designed for static hosting. It combines five ye
 - Explainable Stock Intelligence with five strategy profiles, factor attribution, confidence, conservative fair value, SEC insider and active-manager 13F signals, evidence export, and an optional BYOK AI research editor
 - Private portfolio import for CSV, QFX/OFX, QIF, JSON, and best-effort PDF, including cash-flow-matched benchmark comparisons
 - Institutional ownership lab with 27 curated managers, 20 quarters of history, source-linked filings, lifecycle detection, share-count changes, and per-position entry/add/trim/exit trails
-- Public-disclosure explorer with 440 searchable congressional and executive filers, 65,000+ normalized transactions, activity-derived exposure signals, reporting-delay analysis, and original filing links
+- Public-disclosure explorer with 440 searchable congressional and executive filers, 65,000+ normalized transactions, sample-aware performance and activity rankings, activity-derived exposure signals, reporting-delay analysis, and original filing links
 - Responsive layouts, light/dark themes, keyboard-accessible controls, and command-palette search
 - Browser-only watchlists; imported portfolio records remain in memory unless the visitor explicitly exports them
 - Automated static-data validation and weekday refresh workflow
@@ -62,6 +62,7 @@ npm run dev                # local development
 npm run data:update        # prices and SEC fundamentals
 npm run data:benchmarks    # SPY, QQQ, and VTI history
 npm run data:intelligence  # institutional and public-disclosure snapshots
+npm run data:government:leaderboard # rebuild ranks from the current local disclosure snapshot
 npm run data:signals       # SEC insider and active-manager ownership signals
 npm run data:update:all    # every generated research snapshot
 npm run typecheck          # strict TypeScript validation

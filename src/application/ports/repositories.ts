@@ -1,6 +1,6 @@
 import type { MarketDataset } from "@/src/domain/stock";
 import type { InstitutionalIndex, InstitutionalManager } from "@/src/domain/institutional";
-import type { GovernmentFiler, GovernmentMeta, GovernmentProfile, GovernmentTrade } from "@/src/domain/government";
+import type { GovernmentFiler, GovernmentLeaderboardDataset, GovernmentMeta, GovernmentProfile, GovernmentTrade } from "@/src/domain/government";
 import type { BenchmarkDataset } from "@/src/domain/portfolio";
 import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
 
@@ -21,6 +21,7 @@ export interface GovernmentRepository {
   loadMeta(): Promise<GovernmentMeta>;
   loadIndex(): Promise<GovernmentFiler[]>;
   loadRecent(): Promise<GovernmentTrade[]>;
+  loadLeaderboard(): Promise<GovernmentLeaderboardDataset>;
   loadProfile(id: string): Promise<GovernmentProfile>;
 }
 

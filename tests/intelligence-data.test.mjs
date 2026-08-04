@@ -7,6 +7,7 @@ const institutionalDirectoryUrl = new URL("../public/data/institutional/", impor
 const governmentMetaUrl = new URL("../public/data/government/meta.json", import.meta.url);
 const governmentIndexUrl = new URL("../public/data/government/index.json", import.meta.url);
 const governmentRecentUrl = new URL("../public/data/government/recent.json", import.meta.url);
+const governmentLeaderboardUrl = new URL("../public/data/government/leaderboard.json", import.meta.url);
 const governmentProfilesUrl = new URL("../public/data/government/profiles/", import.meta.url);
 const benchmarkUrl = new URL("../public/data/benchmark-data.json", import.meta.url);
 
@@ -99,4 +100,30 @@ test("recent public disclosures preserve transaction and filing dates", async ()
   assert.ok(recent.some((trade) => trade.source_id === "house_clerk"));
   assert.ok(recent.some((trade) => trade.source_id === "senate_efd"));
   assert.ok(recent.every((trade) => trade.transaction_date && trade.filing_date && trade.doc_url));
+});
+
+test("public-official leaderboard keeps performance comparable and uncertainty visible", async () => {
+  const [leaderboard, filers] = await Promise.all([
+    readFile(governmentLeaderboardUrl, "utf8").then(JSON.parse),
+    readFile(governmentIndexUrl, "utf8").then(JSON.parse),
+  ]);
+  assert.equal(leaderboard.entries.length, filers.length);
+  assert.match(leaderboard.methodology, /median one-year underlying-security return/i);
+  assert.match(leaderboard.methodology, /Wilson lower bound/i);
+  assert.match(leaderboard.methodology, /not current portfolio value/i);
+  assert.ok(leaderboard.entries.filter((entry) => entry.active === true && entry.confidence !== "limited").length >= 90);
+  assert.ok(leaderboard.entries.some((entry) => entry.branch === "executive"));
+  for (const entry of leaderboard.entries) {
+    assert.ok(entry.estimatedOpenActivity >= 0);
+    assert.ok(entry.inferredPositions >= 0);
+    assert.ok(entry.performanceSample <= entry.eligiblePurchases);
+    assert.ok(["high", "medium", "limited"].includes(entry.confidence));
+    if (entry.confidence === "high") assert.ok(entry.performanceSample >= 20 && !entry.historyTruncated);
+    if (entry.confidence === "medium") assert.ok(entry.performanceSample >= 5 && entry.performanceSample < 20 && !entry.historyTruncated);
+    if (entry.purchaseWinRate1Y != null) assert.ok(entry.purchaseWinRate1Y >= 0 && entry.purchaseWinRate1Y <= 100);
+    if (entry.reliabilityScore1Y != null) {
+      assert.ok(entry.reliabilityScore1Y >= 0 && entry.reliabilityScore1Y <= 100);
+      assert.ok(entry.reliabilityScore1Y <= entry.purchaseWinRate1Y);
+    }
+  }
 });

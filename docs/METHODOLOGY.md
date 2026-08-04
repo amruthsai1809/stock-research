@@ -52,6 +52,10 @@ Form 13F is normally filed up to 45 days after quarter end. It covers specified 
 
 Public transaction reports use dollar ranges, not exact values. TIDE preserves each reported range and uses its midpoint only to order or size visual elements. It always separates the transaction date from the public filing date and flags records marked late by the normalized source.
 
+The disclosure leaderboard compares officials using eligible non-derivative purchases with valid ticker and price coverage. Its one-year return is the median underlying-security return one year after those purchases. Options, warrants, and other derivative proxies are excluded because an underlying stock return is not the return of the disclosed instrument. The consistency rank uses the 95% Wilson lower bound of the positive one-year outcome rate, so a small perfect sample does not automatically outrank a large history.
+
+Every performance row includes its observation count. Confidence is `high` for at least 20 one-year observations, `medium` for 5â€“19, and `limited` below 5 or whenever the loaded history is truncated. The default leaderboard excludes limited samples; they remain available behind an explicit coverage control.
+
 An activity-derived exposure signal is created only when a disclosed purchase occurs after the latest explicit full sale for the same ticker. Partial sales reduce the activity-range midpoint; an explicit full sale closes the episode. This is a discovery aid, not a claimed current holding, remaining share count, cost basis, or market value. The interface labels it accordingly.
 
 Ownership can include self, spouse, joint, and dependent accounts. Every displayed action links to the official filing, which remains authoritative if parsing or later amendments change a record.

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { governmentLeaderboardDataset, summarizeGovernmentFiler } from "./lib/governmentLeaderboard.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -79,6 +80,7 @@ async function main() {
     await mkdir(PROFILE_DIR, { recursive: true });
 
     const profileSummaries = new Map();
+    const leaderboardEntries = [];
     for (const filer of enriched) {
       const sourceFile = path.join(dataDir, "filer", `${filer.id}.json`);
       let profile;
@@ -95,6 +97,7 @@ async function main() {
         totalTradeCount: profile.trades?.length ?? trades.length,
       };
       profileSummaries.set(filer.id, { latestTransactionDate: latestTransaction(trades), loadedTradeCount: trades.length });
+      leaderboardEntries.push(summarizeGovernmentFiler({ ...profile.filer, ...filer, latestTransactionDate: latestTransaction(trades) || filer.latestTransactionDate || "" }, trades, { asOf: stats.dateRange.to, historyTruncated: payload.historyTruncated }));
       await writeFile(path.join(PROFILE_DIR, `${filer.id}.json`), `${JSON.stringify(payload)}\n`);
     }
 
@@ -126,10 +129,12 @@ async function main() {
       dateRange: stats.dateRange,
       disclosureLag: stats.disclosureLag,
     };
+    const leaderboard = governmentLeaderboardDataset(leaderboardEntries, { asOf: stats.dateRange.to, generatedAt });
     await Promise.all([
       writeFile(path.join(OUTPUT_DIR, "index.json"), `${JSON.stringify(index)}\n`),
       writeFile(path.join(OUTPUT_DIR, "recent.json"), `${JSON.stringify(recent)}\n`),
       writeFile(path.join(OUTPUT_DIR, "meta.json"), `${JSON.stringify(meta)}\n`),
+      writeFile(path.join(OUTPUT_DIR, "leaderboard.json"), `${JSON.stringify(leaderboard)}\n`),
     ]);
     process.stdout.write(`Wrote ${index.length} public-official profiles (${currentCongress.length} current members; ${stats.totalTrades.toLocaleString()} total transactions upstream).\n`);
   } finally {
