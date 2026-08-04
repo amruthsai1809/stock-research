@@ -45,6 +45,7 @@ export function InteractivePriceChart({
   const [showSma200, setShowSma200] = useState(false);
   const [theme, setTheme] = useState("light");
   const [hovered, setHovered] = useState<PricePoint | null>(null);
+  const [renderedRange, setRenderedRange] = useState<{ start: string; end: string } | null>(null);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -68,6 +69,7 @@ export function InteractivePriceChart({
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !visible.length) return;
+    setRenderedRange(null);
     host.replaceChildren();
 
     const dark = theme === "dark";
@@ -98,7 +100,10 @@ export function InteractivePriceChart({
         timeVisible: false,
         rightOffset: 3,
         barSpacing: compact ? 5 : 7,
-        minBarSpacing: 1.2,
+        // A 5Y daily series contains roughly 1,250 points. Values above ~0.5
+        // silently force lightweight-charts to clip the beginning on common
+        // laptop widths even when setVisibleRange receives the correct dates.
+        minBarSpacing: 0.1,
         fixLeftEdge: true,
       },
       handleScale: true,
@@ -184,14 +189,25 @@ export function InteractivePriceChart({
       const date = timeKey(parameter.time);
       setHovered(pointByDate.get(date) ?? null);
     });
-    chart.timeScale().setVisibleRange({ from: chartData[0].time, to: chartData.at(-1)!.time });
+    const fitSelectedHistory = () => {
+      chart.timeScale().setVisibleRange({ from: chartData[0].time, to: chartData.at(-1)!.time });
+    };
+    const captureRenderedRange = (next: { from: Time; to: Time } | null) => {
+      if (!next) return;
+      setRenderedRange({ start: timeKey(next.from), end: timeKey(next.to) });
+    };
+    chart.timeScale().subscribeVisibleTimeRangeChange(captureRenderedRange);
+    fitSelectedHistory();
+    captureRenderedRange(chart.timeScale().getVisibleRange());
 
     const resize = new ResizeObserver(([entry]) => {
       chart.applyOptions({ width: Math.max(1, Math.floor(entry.contentRect.width)) });
+      fitSelectedHistory();
     });
     resize.observe(host);
     return () => {
       resize.disconnect();
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(captureRenderedRange);
       chart.remove();
       chartRef.current = null;
     };
@@ -201,7 +217,7 @@ export function InteractivePriceChart({
     <div className={`interactive-price-chart ${compact ? "interactive-price-chart--compact" : ""}`}>
       <div className="chart-readout" aria-live="polite">
         <div className="chart-readout__quote">
-          <span>{active ? formatDate(active.date) : "No price data"}</span>
+          <span><small>{hovered ? "Pointed session" : "Latest session"}</small>{active ? formatDate(active.date) : "No price data"}</span>
           <strong>{active ? `$${active.adjustedClose.toFixed(2)}` : "-"}</strong>
           {active && <b className={activeChange >= 0 ? "positive" : "negative"}>{signedPercent(activeChange)} <small>{range} return</small></b>}
         </div>
@@ -229,13 +245,13 @@ export function InteractivePriceChart({
             </div>
             <button className={showSma50 ? "is-active" : ""} aria-pressed={showSma50} onClick={() => setShowSma50((value) => !value)}><i className="legend-swatch legend-swatch--teal" />50D</button>
             <button className={showSma200 ? "is-active" : ""} aria-pressed={showSma200} onClick={() => setShowSma200((value) => !value)}><i className="legend-swatch legend-swatch--blue" />200D</button>
-            <button onClick={() => chartRef.current?.timeScale().fitContent()} title="Reset zoom">Reset</button>
+            <button onClick={() => chartRef.current?.timeScale().setVisibleRange({ from: visible[0].date as Time, to: visible.at(-1)!.date as Time })} title="Reset zoom">Reset</button>
           </div>
         )}
       </div>
 
-      <div className="chart-period-readout" data-chart-range={range} data-range-start={visible[0]?.date ?? ""} data-range-end={visible.at(-1)?.date ?? ""} data-session-count={visible.length}>
-        <b>{range}</b><span>{priceRangeLabel(visible)}</span>
+      <div className="chart-period-readout" data-chart-range={range} data-range-start={visible[0]?.date ?? ""} data-range-end={visible.at(-1)?.date ?? ""} data-rendered-start={renderedRange?.start ?? ""} data-rendered-end={renderedRange?.end ?? ""} data-session-count={visible.length}>
+        <b>{range}</b><span>{priceRangeLabel(visible)}</span><em className={coversSelectedRange(renderedRange, visible) ? "is-complete" : ""}>{coversSelectedRange(renderedRange, visible) ? "Full selected history" : "Zoomed view"}</em>
       </div>
 
       <div
@@ -277,4 +293,10 @@ function formatVolume(value: number) {
 
 function signedPercent(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function coversSelectedRange(rendered: { start: string; end: string } | null, visible: PricePoint[]) {
+  const first = visible[0]?.date;
+  const last = visible.at(-1)?.date;
+  return Boolean(rendered && first && last && rendered.start <= first && rendered.end >= last);
 }

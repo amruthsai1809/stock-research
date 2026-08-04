@@ -47,7 +47,7 @@ export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatc
 
       <nav className="subnav" aria-label={`${stock.name} research sections`}>
         {(["overview", "financials", "ownership", "quality", "source"] as CompanyTab[]).map((item) => (
-          <button key={item} className={tab === item ? "is-active" : ""} onClick={() => setTab(item)}>{item === "source" ? "Source lens" : item === "ownership" ? "Market signals" : item}</button>
+          <button key={item} className={tab === item ? "is-active" : ""} onClick={() => setTab(item)}>{item === "source" ? "Source lens" : item === "ownership" ? "Market signals" : item === "financials" ? "Financial charts" : item}</button>
         ))}
       </nav>
 
@@ -93,7 +93,7 @@ export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatc
         </>
       )}
 
-      {tab === "financials" && <FinancialStatements stock={stock} />}
+      {tab === "financials" && <div className="view-stack"><section className="panel financial-atlas-panel"><FinancialAtlas annuals={annuals} companyName={stock.name} /></section><FinancialStatements stock={stock} /></div>}
       {tab === "ownership" && <MarketSignals stock={stock} signal={researchSignal} />}
       {tab === "quality" && <QualityLab stock={stock} />}
       {tab === "source" && <SourceLens stock={stock} />}

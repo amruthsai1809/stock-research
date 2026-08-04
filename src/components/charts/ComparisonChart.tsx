@@ -12,6 +12,7 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
   const [range, setRange] = useState<CompareRange>("1Y");
   const [theme, setTheme] = useState("light");
   const [hover, setHover] = useState<{ date: string; left: number | null; right: number | null; context: string } | null>(null);
+  const [renderedRange, setRenderedRange] = useState<{ start: string; end: string } | null>(null);
   const selectedLeft = useMemo(() => selectPriceRange(left.prices, range), [left.prices, range]);
   const selectedRight = useMemo(() => selectPriceRange(right.prices, range), [right.prices, range]);
   const commonStart = [selectedLeft[0]?.date, selectedRight[0]?.date].filter(Boolean).sort().at(-1) ?? "";
@@ -55,7 +56,7 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
         horzLine: { color: dark ? "#83918f" : "#6f7d81", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1b6f74" },
       },
       rightPriceScale: { borderColor: dark ? "#314247" : "#d9d8d1" },
-      timeScale: { borderColor: dark ? "#314247" : "#d9d8d1", fixLeftEdge: true, rightOffset: 3, minBarSpacing: 1.2 },
+      timeScale: { borderColor: dark ? "#314247" : "#d9d8d1", fixLeftEdge: true, rightOffset: 3, minBarSpacing: 0.1 },
       localization: { priceFormatter: (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%` },
       handleScale: true,
       handleScroll: true,
@@ -76,10 +77,22 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
     });
     const firstTime = leftNormalized[0]?.time ?? rightNormalized[0]?.time;
     const lastTime = leftNormalized.at(-1)?.time ?? rightNormalized.at(-1)?.time;
-    if (firstTime && lastTime) chart.timeScale().setVisibleRange({ from: firstTime, to: lastTime });
-    const resize = new ResizeObserver(([entry]) => chart.applyOptions({ width: Math.max(1, Math.floor(entry.contentRect.width)) }));
+    const fitSelectedHistory = () => {
+      if (firstTime && lastTime) chart.timeScale().setVisibleRange({ from: firstTime, to: lastTime });
+    };
+    const captureRenderedRange = (next: { from: Time; to: Time } | null) => {
+      if (!next) return;
+      setRenderedRange({ start: timeKey(next.from), end: timeKey(next.to) });
+    };
+    chart.timeScale().subscribeVisibleTimeRangeChange(captureRenderedRange);
+    fitSelectedHistory();
+    captureRenderedRange(chart.timeScale().getVisibleRange());
+    const resize = new ResizeObserver(([entry]) => {
+      chart.applyOptions({ width: Math.max(1, Math.floor(entry.contentRect.width)) });
+      fitSelectedHistory();
+    });
     resize.observe(host);
-    return () => { resize.disconnect(); chart.remove(); };
+    return () => { resize.disconnect(); chart.timeScale().unsubscribeVisibleTimeRangeChange(captureRenderedRange); chart.remove(); };
   }, [context, leftNormalized, rightNormalized, theme]);
 
   const spread = active.left != null && active.right != null ? active.left - active.right : null;
@@ -94,7 +107,7 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
         </div>
         <div className="chart-range" aria-label="Comparison period">{(["3M", "1Y", "3Y", "5Y"] as CompareRange[]).map((item) => <button key={item} className={range === item ? "is-active" : ""} aria-pressed={range === item} onClick={() => { setHover(null); setRange(item); }}>{item}</button>)}</div>
       </div>
-      <div className="chart-period-readout" data-chart-range={range} data-range-start={commonStart} data-range-end={leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? ""} data-session-count={Math.min(leftVisible.length, rightVisible.length)}><b>{range}</b><span>{priceRangeLabel(leftVisible.length <= rightVisible.length ? leftVisible : rightVisible)}</span></div>
+      <div className="chart-period-readout" data-chart-range={range} data-range-start={commonStart} data-range-end={leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? ""} data-rendered-start={renderedRange?.start ?? ""} data-rendered-end={renderedRange?.end ?? ""} data-session-count={Math.min(leftVisible.length, rightVisible.length)}><b>{range}</b><span>{priceRangeLabel(leftVisible.length <= rightVisible.length ? leftVisible : rightVisible)}</span><em className={coversSelectedRange(renderedRange, commonStart, leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? "") ? "is-complete" : ""}>{coversSelectedRange(renderedRange, commonStart, leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? "") ? "Full selected history" : "Zoomed view"}</em></div>
       <div ref={hostRef} className="chart-stage" role="img" aria-label={`Interactive normalized price performance for ${left.name} and ${right.name}. Move the pointer for exact returns.`} />
       <div className="chart-help"><span>Return from the beginning of the selected period</span><small>Move to inspect · drag to pan · scroll to zoom</small></div>
     </div>
@@ -120,4 +133,8 @@ function formatDate(value: string) {
 function formatReturn(value: number | null) {
   if (value == null) return "-";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function coversSelectedRange(rendered: { start: string; end: string } | null, start: string, end: string) {
+  return Boolean(rendered && start && end && rendered.start <= start && rendered.end >= end);
 }

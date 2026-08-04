@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import type { AnnualFinancials } from "@/src/domain/stock";
 import {
   financialChartGroups,
@@ -10,24 +10,47 @@ import {
   type FinancialMetricKey,
 } from "@/src/domain/financialMetrics";
 
+const pulseMetrics: FinancialMetricKey[] = ["revenue", "netIncome", "freeCashFlow", "dilutedEps"];
+
 export function FinancialAtlas({ annuals, companyName }: { annuals: AnnualFinancials[]; companyName: string }) {
   const periods = useMemo(() => annuals.slice(-6), [annuals]);
   return (
     <div className="financial-atlas" data-company={companyName}>
       <div className="financial-atlas__intro">
         <div>
-          <span className="eyebrow">Financial atlas</span>
-          <h2>The business, from eight angles.</h2>
-          <p>Choose a metric inside any chart and point to a fiscal year for its exact reported value.</p>
+          <span className="eyebrow">Interactive financial atlas</span>
+          <h2>See the business move.</h2>
+          <p>Eight chart lenses turn reported filings into a visual operating history. Switch metrics, then point to any fiscal year for the exact value.</p>
         </div>
-        <div className="atlas-legend"><span><i />Reported</span><span><i />Calculated</span><small>Annual · SEC normalized</small></div>
+        <div className="atlas-legend"><span><i />Reported or filing-derived</span><span><i />Interactive series</span><small>Six annual periods · SEC normalized</small></div>
       </div>
+      <FinancialPulse annuals={periods} companyName={companyName} />
       <div className="financial-atlas__grid">
         {financialChartGroups.map((group) => <FinancialTrendCard key={group.id} group={group} annuals={periods} companyName={companyName} />)}
       </div>
       <p className="financial-atlas__note">EBITDA is an operating proxy calculated as operating income plus reported depreciation and amortization. Fiscal P/E uses the adjusted close at fiscal year end and reported diluted EPS. Missing values are never estimated.</p>
     </div>
   );
+}
+
+function FinancialPulse({ annuals, companyName }: { annuals: AnnualFinancials[]; companyName: string }) {
+  return <section className="financial-pulse" aria-label={`${companyName} financial pulse`}>
+    {pulseMetrics.map((key) => {
+      const metric = financialMetrics[key];
+      const values = annuals.map((annual) => metric.value(annual));
+      const latestIndex = findLastIndex(values, (value) => value != null);
+      const previousIndex = findPreviousValue(values, latestIndex);
+      const latest = latestIndex >= 0 ? values[latestIndex] : null;
+      const previous = previousIndex >= 0 ? values[previousIndex] : null;
+      const change = percentageChange(latest, previous);
+      return <article key={key}>
+        <span><i style={{ background: metric.color }} />{metric.shortLabel}</span>
+        <strong>{formatMetric(latest, metric)}</strong>
+        <small className={change == null ? "muted" : change >= 0 ? "positive" : "negative"}>{change == null ? "No comparison" : `${signed(change)} latest YoY`}</small>
+        <MiniTrend values={values} color={metric.color} label={`${companyName} ${metric.label} trend`} />
+      </article>;
+    })}
+  </section>;
 }
 
 function FinancialTrendCard({ group, annuals, companyName }: { group: FinancialChartGroup; annuals: AnnualFinancials[]; companyName: string }) {
@@ -43,14 +66,7 @@ function FinancialTrendCard({ group, annuals, companyName }: { group: FinancialC
   const activeValue = values[activeIndex] ?? null;
   const previousIndex = findPreviousValue(values, activeIndex);
   const previousValue = previousIndex >= 0 ? values[previousIndex] : null;
-  const change = activeValue != null && previousValue != null && previousValue !== 0
-    ? ((activeValue - previousValue) / Math.abs(previousValue)) * 100
-    : null;
-  const finiteValues = values.filter((value): value is number => value != null && Number.isFinite(value));
-  const minimum = Math.min(0, ...finiteValues);
-  const maximum = Math.max(0, ...finiteValues);
-  const span = Math.max(1e-9, maximum - minimum);
-  const zeroTop = (maximum / span) * 100;
+  const change = percentageChange(activeValue, previousValue);
   const firstIndex = values.findIndex((value) => value != null);
   const firstValue = firstIndex >= 0 ? values[firstIndex] : null;
   const trend = firstValue != null && activeValue != null && firstValue > 0 && activeValue > 0 && activeIndex > firstIndex
@@ -69,44 +85,85 @@ function FinancialTrendCard({ group, annuals, companyName }: { group: FinancialC
         <div><span className="eyebrow">{group.eyebrow}</span><h3>{group.title}</h3></div>
         {trend != null && <span className={`atlas-trend ${trend >= 0 ? "positive" : "negative"}`}>{signed(trend)} CAGR</span>}
       </header>
-      <p>{group.description}</p>
       <div className="atlas-metric-tabs" aria-label={`${group.title} metric`}>
         {group.metrics.map((key) => {
           const definition = financialMetrics[key];
           const available = availableKeys.includes(key);
-          return <button key={key} disabled={!available} className={metric.key === key ? "is-active" : ""} aria-pressed={metric.key === key} onClick={() => chooseMetric(key)}>{definition.shortLabel}</button>;
+          return <button key={key} disabled={!available} className={metric.key === key ? "is-active" : ""} aria-pressed={metric.key === key} onClick={() => chooseMetric(key)}><i style={{ background: definition.color }} />{definition.shortLabel}</button>;
         })}
       </div>
       <div className="atlas-readout" aria-live="polite">
-        <span>FY {activeAnnual?.year ?? "—"}</span>
+        <span>Fiscal {activeAnnual?.year ?? "—"}</span>
         <strong>{formatMetric(activeValue, metric)}</strong>
         <b className={change == null ? "muted" : change >= 0 ? "positive" : "negative"}>{change == null ? "No comparable year" : `${signed(change)} YoY`}</b>
       </div>
-      <div className="atlas-bars" role="img" aria-label={`${companyName} ${metric.label} annual chart`}>
-        <i className="atlas-zero" style={{ top: `${zeroTop}%` }} />
-        {annuals.map((annual, index) => {
-          const value = values[index];
-          const top = value == null ? zeroTop : value >= 0 ? ((maximum - value) / span) * 100 : zeroTop;
-          const height = value == null ? 0 : Math.max(2.5, (Math.abs(value) / span) * 100);
-          return (
-            <button
-              key={annual.end}
-              className={`${index === activeIndex ? "is-selected" : ""} ${value != null && value < 0 ? "is-negative" : ""}`}
-              onPointerEnter={() => value != null && setSelectedIndex(index)}
-              onFocus={() => value != null && setSelectedIndex(index)}
-              onClick={() => value != null && setSelectedIndex(index)}
-              disabled={value == null}
-              aria-label={`Fiscal ${annual.year}: ${formatMetric(value, metric)}`}
-            >
-              <span><i style={{ top: `${top}%`, height: `${height}%`, background: metric.color }} /></span>
-              <b>FY{String(annual.year).slice(-2)}</b>
-            </button>
-          );
-        })}
-      </div>
+      <AnnualTrendPlot annuals={annuals} values={values} metric={metric} activeIndex={activeIndex} onSelect={setSelectedIndex} companyName={companyName} />
       <footer><span style={{ background: metric.color }} /><p><b>{metric.label}</b>{metric.description}</p></footer>
     </article>
   );
+}
+
+function AnnualTrendPlot({ annuals, values, metric, activeIndex, onSelect, companyName }: { annuals: AnnualFinancials[]; values: Array<number | null>; metric: FinancialMetricDefinition; activeIndex: number; onSelect: (index: number) => void; companyName: string }) {
+  const rawId = useId();
+  const gradientId = `atlas-gradient-${rawId.replaceAll(":", "")}`;
+  const width = 640;
+  const height = 220;
+  const left = 14;
+  const right = 76;
+  const top = 17;
+  const bottom = 31;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const finite = values.filter((value): value is number => value != null && Number.isFinite(value));
+  const rawMinimum = Math.min(0, ...finite);
+  const rawMaximum = Math.max(0, ...finite);
+  const naturalSpan = Math.max(1e-9, rawMaximum - rawMinimum);
+  const padding = naturalSpan * 0.08;
+  const minimum = rawMinimum < 0 ? rawMinimum - padding : 0;
+  const maximum = rawMaximum + padding;
+  const span = Math.max(1e-9, maximum - minimum);
+  const xAt = (index: number) => left + (annuals.length <= 1 ? plotWidth / 2 : (index / (annuals.length - 1)) * plotWidth);
+  const yAt = (value: number) => top + ((maximum - value) / span) * plotHeight;
+  const zeroY = yAt(0);
+  const points = values.flatMap((value, index) => value == null ? [] : [{ index, value, x: xAt(index), y: yAt(value) }]);
+  const linePath = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const areaPath = points.length ? `${linePath} L${points.at(-1)!.x.toFixed(1)},${zeroY.toFixed(1)} L${points[0].x.toFixed(1)},${zeroY.toFixed(1)} Z` : "";
+  const activePoint = points.find((point) => point.index === activeIndex);
+  const barWidth = Math.min(34, (plotWidth / Math.max(1, annuals.length)) * .36);
+  const levels = [maximum, minimum + span / 2, minimum];
+
+  return <figure className="annual-trend-plot" aria-label={`${companyName} ${metric.label} interactive annual chart`}>
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={metric.color} stopOpacity=".28" />
+          <stop offset="100%" stopColor={metric.color} stopOpacity=".015" />
+        </linearGradient>
+      </defs>
+      {levels.map((level) => <g key={level}><line className="annual-trend-plot__grid" x1={left} x2={width - right + 8} y1={yAt(level)} y2={yAt(level)} /><text className="annual-trend-plot__axis" x={width - right + 16} y={yAt(level) + 4}>{formatAxis(level, metric)}</text></g>)}
+      {minimum < 0 && maximum > 0 && <line className="annual-trend-plot__zero" x1={left} x2={width - right + 8} y1={zeroY} y2={zeroY} />}
+      {activePoint && <rect className="annual-trend-plot__focus-band" x={activePoint.x - plotWidth / Math.max(1, annuals.length) / 2} y={top} width={plotWidth / Math.max(1, annuals.length)} height={plotHeight} />}
+      {points.map((point) => <rect key={`bar-${point.index}`} x={point.x - barWidth / 2} y={Math.min(point.y, zeroY)} width={barWidth} height={Math.max(2, Math.abs(zeroY - point.y))} rx="5" fill={metric.color} opacity={point.index === activeIndex ? .25 : .11} />)}
+      {areaPath && <path d={areaPath} fill={`url(#${gradientId})`} />}
+      {linePath && <path d={linePath} fill="none" stroke={metric.color} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />}
+      {points.map((point) => <circle key={`point-${point.index}`} cx={point.x} cy={point.y} r={point.index === activeIndex ? 6 : 3.5} fill={point.index === activeIndex ? metric.color : "var(--surface)"} stroke={metric.color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />)}
+      {activePoint && <line className="annual-trend-plot__crosshair" x1={activePoint.x} x2={activePoint.x} y1={top} y2={height - bottom} />}
+      {annuals.map((annual, index) => <text key={annual.end} className={index === activeIndex ? "annual-trend-plot__year is-active" : "annual-trend-plot__year"} x={xAt(index)} y={height - 8} textAnchor="middle">FY{String(annual.year).slice(-2)}</text>)}
+    </svg>
+    <div className="annual-trend-plot__hits" style={{ gridTemplateColumns: `repeat(${annuals.length}, 1fr)` }}>
+      {annuals.map((annual, index) => <button key={annual.end} disabled={values[index] == null} aria-label={`Fiscal ${annual.year}: ${formatMetric(values[index], metric)}`} onPointerEnter={() => values[index] != null && onSelect(index)} onFocus={() => values[index] != null && onSelect(index)} onClick={() => values[index] != null && onSelect(index)} />)}
+    </div>
+  </figure>;
+}
+
+function MiniTrend({ values, color, label }: { values: Array<number | null>; color: string; label: string }) {
+  const finite = values.filter((value): value is number => value != null);
+  if (finite.length < 2) return <div className="mini-trend mini-trend--empty">Insufficient history</div>;
+  const minimum = Math.min(...finite);
+  const maximum = Math.max(...finite);
+  const span = Math.max(1e-9, maximum - minimum);
+  const points = values.flatMap((value, index) => value == null ? [] : [`${(index / Math.max(1, values.length - 1)) * 100},${31 - ((value - minimum) / span) * 25}`]).join(" ");
+  return <svg className="mini-trend" viewBox="0 0 100 36" preserveAspectRatio="none" role="img" aria-label={label}><polyline points={points} fill="none" stroke={color} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" /></svg>;
 }
 
 function formatMetric(value: number | null, metric: FinancialMetricDefinition) {
@@ -116,6 +173,18 @@ function formatMetric(value: number | null, metric: FinancialMetricDefinition) {
   if (metric.format === "perShare") return `${value < 0 ? "−" : ""}$${Math.abs(value).toFixed(2)}`;
   if (metric.format === "shares") return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(value);
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function formatAxis(value: number, metric: FinancialMetricDefinition) {
+  if (metric.format === "percent") return `${value.toFixed(0)}%`;
+  if (metric.format === "multiple") return `${value.toFixed(0)}×`;
+  if (metric.format === "perShare") return `$${Math.abs(value).toFixed(value < 10 ? 1 : 0)}`;
+  if (metric.format === "shares") return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 0 }).format(value);
+}
+
+function percentageChange(value: number | null, previous: number | null) {
+  return value != null && previous != null && previous !== 0 ? ((value - previous) / Math.abs(previous)) * 100 : null;
 }
 
 function findLastIndex<T>(values: T[], predicate: (value: T) => boolean) {
