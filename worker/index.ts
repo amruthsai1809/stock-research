@@ -20,6 +20,9 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
+const LEGACY_HOSTNAME = "equitylab.amruthg.com";
+const CANONICAL_HOSTNAME = "el.amruthg.com";
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -29,6 +32,12 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.hostname.toLowerCase() === LEGACY_HOSTNAME) {
+      url.hostname = CANONICAL_HOSTNAME;
+      url.protocol = "https:";
+      return Response.redirect(url, 308);
+    }
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

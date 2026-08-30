@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://equitylab.amruthg.com"),
+  metadataBase: new URL("https://el.amruthg.com"),
   title: `${product.name} — Evidence-first equity research`,
   description:
     "Research stocks with transparent multi-factor scores, dip analysis, 13F portfolios, public-official trades, and private AI-assisted memos.",
