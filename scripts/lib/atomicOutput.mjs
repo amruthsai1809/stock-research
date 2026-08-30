@@ -27,10 +27,14 @@ export async function replaceDirectory(stagedDirectory, targetDirectory) {
 }
 
 export async function writeJsonAtomic(targetFile, value, { pretty = false } = {}) {
+  return writeTextAtomic(targetFile, `${JSON.stringify(value, null, pretty ? 2 : undefined)}\n`);
+}
+
+export async function writeTextAtomic(targetFile, content) {
   await mkdir(path.dirname(targetFile), { recursive: true });
   const temporaryFile = `${targetFile}.${process.pid}.${Date.now()}.tmp`;
   try {
-    await writeFile(temporaryFile, `${JSON.stringify(value, null, pretty ? 2 : undefined)}\n`, "utf8");
+    await writeFile(temporaryFile, content, "utf8");
     await rename(temporaryFile, targetFile);
   } finally {
     await rm(temporaryFile, { force: true }).catch(() => {});

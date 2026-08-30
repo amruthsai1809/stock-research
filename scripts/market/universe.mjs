@@ -99,7 +99,8 @@ export function isEligibleSecurity(name = "", context = {}) {
 }
 
 export function symbolSlug(symbol) {
-  return canonicalSymbol(symbol).toLowerCase().replaceAll(".", "-");
+  const slug = canonicalSymbol(symbol).toLowerCase().replaceAll(".", "-");
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(slug) ? `${slug}-ticker` : slug;
 }
 
 function canonicalSymbol(symbol = "") {

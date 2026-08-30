@@ -8,6 +8,7 @@ import { BrowserAiMemoGateway, buildEvidencePacket, buildLocalMemo } from "../ap
 import { intelligenceStrategies } from "../domain/scoring";
 import type { AiProviderId, AiResearchMemo, StockIntelligenceScore } from "../domain/types";
 import { useStockIntelligence } from "./useStockIntelligence";
+import { useResearchSignal } from "@/src/features/market/useStockDetails";
 
 const providerModels: Record<AiProviderId, string> = {
   openai: "gpt-5.6-terra",
@@ -17,6 +18,11 @@ const providerModels: Record<AiProviderId, string> = {
 
 export function StockIntelligence({ stocks, repository, onSelect }: { stocks: StockSummary[]; repository: ResearchSignalRepository; onSelect: (symbol: string) => void }) {
   const vm = useStockIntelligence(stocks, repository);
+  const selectedSignal = useResearchSignal(
+    repository,
+    vm.selected?.symbol,
+    vm.selected && vm.dataset ? vm.dataset.signals[vm.selected.symbol] : undefined,
+  );
   const [query, setQuery] = useState("");
   const [universeView, setUniverseView] = useState<"ranked" | "opportunity" | "confidence">("ranked");
   const [visibleCount, setVisibleCount] = useState(100);
@@ -31,7 +37,7 @@ export function StockIntelligence({ stocks, repository, onSelect }: { stocks: St
   if (!vm.dataset || !vm.selected) return <section className="panel intelligence-skeleton" aria-busy="true"><span className="ai-orbit" /><h2>Building the evidence matrix</h2><p>Normalizing fundamentals, price behavior, SEC insider activity, and 13F movement.</p></section>;
 
   const stock = stocks.find((item) => item.symbol === vm.selected?.symbol)!;
-  const signal = vm.dataset.signals[vm.selected.symbol];
+  const signal = selectedSignal ?? vm.dataset.signals[vm.selected.symbol];
   return <div className="view-stack intelligence-view">
     <section className="intelligence-hero">
       <div className="intelligence-hero__copy">

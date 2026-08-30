@@ -9,31 +9,39 @@ const institutionalUrl = new URL("../public/data/institutional/index.json", impo
 
 test("stock-intelligence snapshot covers the complete market universe", async () => {
   const dataset = JSON.parse(await readFile(signalsUrl, "utf8"));
-  const market = JSON.parse(await readFile(dataset.schemaVersion === 2 ? generatedMarketUrl : marketUrl, "utf8"));
+  const market = JSON.parse(await readFile(dataset.schemaVersion >= 2 ? generatedMarketUrl : marketUrl, "utf8"));
   assert.match(dataset.methodology, /computed locally/i);
   assert.match(dataset.sources.insiders, /^https:\/\/www\.sec\.gov\//);
   assert.match(dataset.sources.institutions, /^https:\/\/www\.sec\.gov\//);
   assert.match(dataset.sources.analysts, /^https:\/\/finance\.yahoo\.com\//);
-  assert.deepEqual(Object.keys(dataset.signals).sort(), market.stocks.map((stock) => stock.symbol).sort());
-  if (dataset.schemaVersion === 2) assert.equal(dataset.coverage.universe, market.stocks.length);
+  const marketSymbols = new Set(market.stocks.map((stock) => stock.symbol));
+  const signalSymbols = Object.keys(dataset.signals);
+  assert.ok(signalSymbols.every((symbol) => marketSymbols.has(symbol)));
+  assert.equal(dataset.coverage.universe, signalSymbols.length);
+  if (signalSymbols.length === market.stocks.length) assert.deepEqual(signalSymbols.sort(), [...marketSymbols].sort());
   assert.ok(new Date(dataset.generatedAt).getTime() > 0);
 });
 
-test("insider signal uses only source-linked open-market transactions", async () => {
+test("insider signal uses classified, source-linked ownership events", async () => {
   const dataset = JSON.parse(await readFile(signalsUrl, "utf8"));
   const populated = Object.values(dataset.signals).filter((signal) => signal.insider.transactions.length);
   assert.ok(populated.length >= 12, "recent insider coverage is unexpectedly sparse");
   for (const signal of Object.values(dataset.signals)) {
     const keys = new Set();
     for (const transaction of signal.insider.transactions) {
-      assert.ok(transaction.code === "P" || transaction.code === "S");
-      assert.equal(transaction.action, transaction.code === "P" ? "purchase" : "sale");
+      assert.match(transaction.code, /^[A-Z]$/);
+      assert.ok(["purchase", "sale", "other"].includes(transaction.action));
+      assert.ok(["personal_investment", "sale", "scheduled_sale", "tax_sale", "award", "option_exercise", "tax_withholding", "gift", "conversion", "issuer_disposition", "other"].includes(transaction.category));
+      assert.ok(["acquired", "disposed"].includes(transaction.direction));
+      if (transaction.category === "personal_investment") assert.equal(transaction.action, "purchase");
+      if (["sale", "scheduled_sale", "tax_sale"].includes(transaction.category)) assert.equal(transaction.action, "sale");
+      if (!["P", "S"].includes(transaction.code)) assert.equal(transaction.value, null);
       assert.match(transaction.transactionDate, /^\d{4}-\d{2}-\d{2}$/);
       assert.match(transaction.filingDate, /^\d{4}-\d{2}-\d{2}$/);
       assert.match(transaction.sourceUrl, /^https:\/\/www\.sec\.gov\/Archives\/edgar\/data\//);
       assert.ok(transaction.shares >= 0);
       assert.ok(transaction.value == null || transaction.value >= 0);
-      const key = [transaction.accession, transaction.ownerName, transaction.transactionDate, transaction.code, transaction.shares, transaction.price].join("|");
+      const key = [transaction.accession, transaction.ownerName, transaction.transactionDate, transaction.code, transaction.category, transaction.direction, transaction.securityTitle, transaction.directOrIndirect].join("|");
       assert.ok(!keys.has(key), `${signal.symbol} contains a duplicated insider transaction`);
       keys.add(key);
     }

@@ -1,6 +1,7 @@
 import type { ResearchSignalRepository } from "@/src/application/ports/repositories";
 import type { ResearchSignal, ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
 import { parseResearchSignal, parseResearchSignals } from "@/src/shared/contracts/researchSignals";
+import { symbolFileSlug } from "@/src/domain/symbolFile";
 
 export class StaticResearchSignalRepository implements ResearchSignalRepository {
   private indexPromise: Promise<ResearchSignalDataset> | null = null;
@@ -35,7 +36,7 @@ export class StaticResearchSignalRepository implements ResearchSignalRepository 
   }
 
   private async fetchSymbol(symbol: string): Promise<ResearchSignal | null> {
-    const slug = symbol.toLowerCase().replaceAll(".", "-");
+    const slug = symbolFileSlug(symbol);
     const response = await fetch(`${this.detailRoot}/${slug}.json`);
     if (response.ok) return parseResearchSignal(await response.json());
     if (response.status !== 404) throw new Error(`${symbol} research signals returned ${response.status}`);

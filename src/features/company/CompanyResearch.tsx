@@ -3,14 +3,16 @@
 import { useMemo, useState } from "react";
 import type { AnalyzedStock, AnnualFinancials } from "@/src/domain/stock";
 import { formatCompactCurrency, formatPercent, percentChange } from "@/src/domain/analytics";
-import { Change, MetricCard, ScoreDial, StockMark, Tag } from "@/src/components/ui";
+import { Change, ScoreDial, StockMark, Tag } from "@/src/components/ui";
 import { InteractivePriceChart } from "@/src/components/charts/InteractivePriceChart";
 import { FinancialAtlas } from "@/src/components/charts/FinancialAtlas";
-import { MarketSignalPreview, MarketSignals } from "@/src/components/charts/MarketSignals";
+import { MarketSignals } from "@/src/components/charts/MarketSignals";
+import { CompanySnapshot } from "./CompanySnapshot";
 import type { ResearchSignal } from "@/src/modules/stock-intelligence/domain/types";
 
 type Props = {
   stock: AnalyzedStock;
+  marketCap: number | null;
   researchSignal?: ResearchSignal;
   isWatched: boolean;
   onToggleWatchlist: (symbol: string) => void;
@@ -18,10 +20,9 @@ type Props = {
 };
 
 type CompanyTab = "overview" | "financials" | "ownership" | "quality" | "source";
-export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatchlist, onOpenValuation }: Props) {
+export function CompanyResearch({ stock, marketCap, researchSignal, isWatched, onToggleWatchlist, onOpenValuation }: Props) {
   const [tab, setTab] = useState<CompanyTab>("overview");
   const annuals = stock.annuals.filter((annual) => annual.revenue != null || annual.netIncome != null);
-  const latest = stock.latestAnnual;
   const reportingCurrency = stock.reportingCurrency ?? "USD";
   const insights = useMemo(() => buildInsights(stock), [stock]);
 
@@ -54,16 +55,7 @@ export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatc
 
       {tab === "overview" && (
         <>
-          <section className="metric-grid metric-grid--six">
-            <MetricCard label="52W drawdown" value={<Change value={stock.drawdown52Week} />} detail={`${formatPercent(stock.distanceFrom200Day)} vs 200D`} accent="coral" />
-            <MetricCard label="Revenue growth" value={formatPercent(stock.revenueGrowth)} detail={`FY ${latest?.year ?? "—"}`} />
-            <MetricCard label="Operating margin" value={formatPercent(stock.operatingMargin)} detail="latest fiscal year" />
-            <MetricCard label="Free cash flow" value={formatCompactCurrency(latest?.freeCashFlow, reportingCurrency)} detail={`${formatPercent(stock.freeCashFlowMargin)} margin`} accent="green" />
-            <MetricCard label="Share count" value={formatPercent(stock.shareChange)} detail={stock.shareChange != null && stock.shareChange <= 0 ? "net reduction" : "year over year"} />
-            <MetricCard label="Quality" value={`${stock.qualityScore}/100`} detail={stock.classification} accent="blue" />
-          </section>
-
-          <MarketSignalPreview signal={researchSignal} onOpen={() => setTab("ownership")} />
+          <CompanySnapshot stock={stock} marketCap={marketCap} />
 
           <div className="research-grid">
             <section className="panel chart-panel chart-panel--large">

@@ -2,7 +2,15 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { strFromU8, unzipSync } from "fflate";
-import { createStagedDirectory, replaceDirectory, writeJsonAtomic } from "./lib/atomicOutput.mjs";
+import { createStagedDirectory, replaceDirectory, writeJsonAtomic, writeTextAtomic } from "./lib/atomicOutput.mjs";
+import {
+  actionForCategory,
+  classifyInsiderTransaction,
+  groupInsiderTransactions,
+  reconcileInsiderEvidence,
+  summarizeInsiderTransactions,
+} from "./lib/insiderTransactions.mjs";
+import { symbolSlug } from "./market/universe.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MARKET_INDEX_PATH = path.join(ROOT, "public", "data", "market", "index.json");
@@ -19,9 +27,13 @@ const SEC_HEADERS = {
   Accept: "application/json,application/xml,text/xml,text/plain,*/*",
 };
 const MAX_INSIDER_AGE_DAYS = 366;
-const MAX_INSIDER_TRANSACTIONS = 120;
+// Keep the complete rolling-year event set for active issuers while retaining a
+// hard safety ceiling for unusually noisy or malformed feeds. Per-symbol detail
+// files are generated artifacts and are intentionally excluded from Git history.
+const MAX_INSIDER_TRANSACTIONS = 2_000;
 const SIGNAL_LIMIT = Math.max(0, Number(process.env.SIGNAL_LIMIT ?? 0));
 const SIGNAL_SYMBOLS = new Set((process.env.SIGNAL_SYMBOLS ?? "").split(",").map((symbol) => symbol.trim().toUpperCase()).filter(Boolean));
+const BOOTSTRAP_SIGNAL_SYMBOLS = new Set(["AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN", "TSLA", "ADBE", "CRM", "AMD", "AVGO", "NKE", "SBUX", "COST", "HD", "UNH", "JNJ", "KO", "DIS", "PYPL", "DUOL"]);
 
 let secGate = Promise.resolve();
 let lastSecRequest = 0;
@@ -72,12 +84,30 @@ async function loadMarket() {
 }
 
 async function loadBaseline() {
+  const local = await readJsonIfPresent(OUTPUT_PATH);
+  if (local?.signals) return local;
   try {
     const deployed = await (await fetchOk(`${DEPLOYED_BASE_URL}/data/research-signals.json`)).json();
     if (deployed?.signals) return deployed;
   } catch { /* The checked-in bootstrap remains a valid first-deploy fallback. */ }
-  const local = await readJsonIfPresent(OUTPUT_PATH);
-  return local?.signals ? local : { signals: {} };
+  return { signals: {} };
+}
+
+async function loadDetailBaselines(stocks) {
+  const details = new Map();
+  for (const stock of stocks) {
+    const detail = await readJsonIfPresent(path.join(DETAIL_DIR, `${symbolSlug(stock.symbol)}.json`));
+    if (detail?.symbol === stock.symbol) details.set(stock.symbol, detail);
+  }
+  return details;
+}
+
+function knownCompleteAccessions(signal) {
+  const transactions = signal?.insider?.transactions ?? [];
+  // The previous generator capped detail at 120 rows. An exact cap can split a
+  // filing, so those issuers are deliberately rescanned instead of guessed.
+  if (transactions.length === 120 || transactions.length === 500 || transactions.length >= MAX_INSIDER_TRANSACTIONS) return new Set();
+  return new Set(transactions.map((transaction) => transaction.accession).filter(Boolean));
 }
 
 function quarterCandidates(now = new Date()) {
@@ -130,6 +160,26 @@ function secAccessionUrl(cik, accession) {
   return `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll("-", "")}/${accession}-index.html`;
 }
 
+function ownershipDirection(value) {
+  return String(value ?? "").trim().toUpperCase() === "D" ? "disposed" : "acquired";
+}
+
+function ownershipMethod(value) {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return normalized === "D" ? "direct" : normalized === "I" ? "indirect" : null;
+}
+
+function footnoteIds(value) {
+  return String(value ?? "").split(/[,\s]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function contextForBulkRow(row, footnotes) {
+  const ids = [...new Set(Object.entries(row)
+    .filter(([name, value]) => name.endsWith("_FN") && value)
+    .flatMap(([, value]) => footnoteIds(value)))];
+  return ids.map((id) => footnotes.get(row.ACCESSION_NUMBER)?.get(id)).filter(Boolean).join(" ") || null;
+}
+
 async function loadBulkInsiders(stocks) {
   const byCik = new Map(stocks.map((stock) => [String(Number(stock.cik)), stock.symbol]));
   const result = new Map(stocks.map((stock) => [stock.symbol, []]));
@@ -163,28 +213,44 @@ async function loadBulkInsiders(stocks) {
     for (const row of tsvRows(zipText(zip, "REPORTINGOWNER.tsv"))) {
       if (submissions.has(row.ACCESSION_NUMBER) && !owners.has(row.ACCESSION_NUMBER)) owners.set(row.ACCESSION_NUMBER, row);
     }
+    const footnotes = new Map();
+    for (const row of tsvRows(zipText(zip, "FOOTNOTES.tsv"))) {
+      if (!submissions.has(row.ACCESSION_NUMBER)) continue;
+      if (!footnotes.has(row.ACCESSION_NUMBER)) footnotes.set(row.ACCESSION_NUMBER, new Map());
+      footnotes.get(row.ACCESSION_NUMBER).set(row.FOOTNOTE_ID, clean(row.FOOTNOTE_TXT));
+    }
     for (const row of tsvRows(zipText(zip, "NONDERIV_TRANS.tsv"))) {
       const submission = submissions.get(row.ACCESSION_NUMBER);
-      if (!submission || !["P", "S"].includes(row.TRANS_CODE)) continue;
+      const code = String(row.TRANS_CODE ?? "").trim().toUpperCase();
+      if (!submission || !/^[A-Z]$/.test(code)) continue;
       const shares = Math.max(0, finite(row.TRANS_SHARES) ?? 0);
       const price = finite(row.TRANS_PRICEPERSHARE);
       const transactionDate = normalizeSecDate(row.TRANS_DATE) ?? normalizeSecDate(submission.PERIOD_OF_REPORT) ?? normalizeSecDate(submission.FILING_DATE);
       const filingDate = normalizeSecDate(submission.FILING_DATE);
       if (!transactionDate || !filingDate) continue;
       const owner = owners.get(row.ACCESSION_NUMBER);
+      const filingContext = contextForBulkRow(row, footnotes);
+      const rule10b51 = /^(?:1|true)$/i.test(submission.AFF10B5ONE) || /10b5-?1/i.test(filingContext ?? "");
+      const category = classifyInsiderTransaction({ code, filingContext, rule10b51 });
       result.get(submission.symbol).push({
         accession: row.ACCESSION_NUMBER,
         ownerName: owner?.RPTOWNERNAME || "Undisclosed reporting owner",
         ownerRole: roleForOwner(owner),
         transactionDate,
         filingDate,
-        code: row.TRANS_CODE,
-        action: row.TRANS_CODE === "P" ? "purchase" : "sale",
+        code,
+        action: actionForCategory(category),
+        category,
+        direction: ownershipDirection(row.TRANS_ACQUIRED_DISP_CD),
+        securityTitle: row.SECURITY_TITLE || "Reported security",
         shares,
         price,
-        value: price == null ? null : shares * price,
+        value: ["P", "S"].includes(code) && price != null ? shares * price : null,
         sharesOwnedAfter: finite(row.SHRS_OWND_FOLWNG_TRANS),
-        rule10b51: /^(?:1|true)$/i.test(submission.AFF10B5ONE),
+        directOrIndirect: ownershipMethod(row.DIRECT_INDIRECT_OWNERSHIP),
+        natureOfOwnership: row.NATURE_OF_OWNERSHIP || null,
+        rule10b51,
+        filingContext,
         sourceUrl: secAccessionUrl(submission.ISSUERCIK, row.ACCESSION_NUMBER),
       });
     }
@@ -201,6 +267,16 @@ const tag = (xml, name) => clean(rawTag(xml, name));
 const numericTag = (xml, name) => finite(tag(xml, name));
 const blocks = (xml, name) => [...xml.matchAll(new RegExp(`<(?:\\w+:)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:\\w+:)?${name}>`, "gi"))].map((match) => match[1]);
 
+function ownershipFootnotes(xml) {
+  return new Map([...xml.matchAll(/<(?:\w+:)?footnote\b[^>]*\bid=["']([^"']+)["'][^>]*>([\s\S]*?)<\/(?:\w+:)?footnote>/gi)]
+    .map((match) => [match[1], clean(match[2])]));
+}
+
+function contextForXmlTransaction(transaction, footnotes) {
+  const ids = [...new Set([...transaction.matchAll(/<(?:\w+:)?footnoteId\b[^>]*\bid=["']([^"']+)["'][^>]*\/?\s*>/gi)].map((match) => match[1]))];
+  return ids.map((id) => footnotes.get(id)).filter(Boolean).join(" ") || null;
+}
+
 function ownershipRole(xml) {
   const relationship = rawTag(xml, "reportingOwnerRelationship");
   const roles = [];
@@ -213,15 +289,20 @@ function ownershipRole(xml) {
 function parseOwnershipXml(xml, filing) {
   const owner = clean(tag(xml, "rptOwnerName")) || "Undisclosed reporting owner";
   const role = ownershipRole(xml);
-  const rule10b51 = /10b5-?1/i.test(xml);
+  const footnotes = ownershipFootnotes(xml);
+  const filingRule10b51 = /^(?:1|true)$/i.test(tag(xml, "aff10b5One"));
   const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${filing.accession.replaceAll("-", "")}/${path.posix.basename(filing.primaryDocument)}`;
   return blocks(xml, "nonDerivativeTransaction").flatMap((transaction) => {
     const code = tag(rawTag(transaction, "transactionCoding"), "transactionCode").toUpperCase();
-    if (!["P", "S"].includes(code)) return [];
+    if (!/^[A-Z]$/.test(code)) return [];
     const amounts = rawTag(transaction, "transactionAmounts");
     const post = rawTag(transaction, "postTransactionAmounts");
+    const ownership = rawTag(transaction, "ownershipNature");
     const shares = Math.max(0, numericTag(rawTag(amounts, "transactionShares"), "value") ?? 0);
     const price = numericTag(rawTag(amounts, "transactionPricePerShare"), "value");
+    const filingContext = contextForXmlTransaction(transaction, footnotes);
+    const rule10b51 = filingRule10b51 || /10b5-?1/i.test(filingContext ?? "");
+    const category = classifyInsiderTransaction({ code, filingContext, rule10b51 });
     return [{
       accession: filing.accession,
       ownerName: owner,
@@ -229,18 +310,24 @@ function parseOwnershipXml(xml, filing) {
       transactionDate: tag(rawTag(transaction, "transactionDate"), "value") || filing.filingDate,
       filingDate: filing.filingDate,
       code,
-      action: code === "P" ? "purchase" : "sale",
+      action: actionForCategory(category),
+      category,
+      direction: ownershipDirection(tag(rawTag(amounts, "transactionAcquiredDisposedCode"), "value")),
+      securityTitle: tag(rawTag(transaction, "securityTitle"), "value") || "Reported security",
       shares,
       price,
-      value: price == null ? null : shares * price,
+      value: ["P", "S"].includes(code) && price != null ? shares * price : null,
       sharesOwnedAfter: numericTag(rawTag(post, "sharesOwnedFollowingTransaction"), "value"),
+      directOrIndirect: ownershipMethod(tag(rawTag(ownership, "directOrIndirectOwnership"), "value")),
+      natureOfOwnership: tag(rawTag(ownership, "natureOfOwnership"), "value") || null,
       rule10b51,
+      filingContext,
       sourceUrl,
     }];
   });
 }
 
-async function loadCurrentQuarterInsiders(stocks, quarterStart) {
+async function loadCurrentQuarterInsiders(stocks, quarterStart, knownAccessions = new Map()) {
   const result = new Map(stocks.map((stock) => [stock.symbol, []]));
   if (process.env.SIGNAL_SKIP_LIVE_INSIDERS === "1") return result;
   let cursor = 0;
@@ -252,8 +339,9 @@ async function loadCurrentQuarterInsiders(stocks, quarterStart) {
       try {
         const submissions = await (await fetchOk(`https://data.sec.gov/submissions/CIK${stock.cik}.json`, {}, { retryForbidden: false })).json();
         const recent = submissions.filings?.recent ?? {};
+        const known = knownAccessions.get(stock.symbol) ?? new Set();
         const filings = (recent.form ?? []).map((form, index) => ({ form, accession: recent.accessionNumber[index], filingDate: recent.filingDate[index], primaryDocument: recent.primaryDocument[index], cikNumber: String(Number(stock.cik)) }))
-          .filter((filing) => /^4(?:\/A)?$/i.test(filing.form) && filing.filingDate >= quarterStart && filing.accession && filing.primaryDocument);
+          .filter((filing) => /^4(?:\/A)?$/i.test(filing.form) && filing.filingDate >= quarterStart && filing.accession && filing.primaryDocument && !known.has(filing.accession));
         for (const filing of filings) {
           try {
             const url = `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${filing.accession.replaceAll("-", "")}/${path.posix.basename(filing.primaryDocument)}`;
@@ -279,28 +367,6 @@ async function loadCurrentQuarterInsiders(stocks, quarterStart) {
   await Promise.all(workers);
   if (submissionsCircuitOpen && completed < stocks.length) process.stdout.write(`[signals] SEC live insider scan stopped after ${completed}/${stocks.length}; deployed evidence retained\n`);
   return result;
-}
-
-function dedupeInsiders(rows, cutoff) {
-  const unique = new Map();
-  for (const row of rows) {
-    if (row.transactionDate < cutoff) continue;
-    const key = [row.accession, row.ownerName, row.transactionDate, row.code, row.shares, row.price].join("|");
-    unique.set(key, row);
-  }
-  return [...unique.values()].sort((a, b) => b.transactionDate.localeCompare(a.transactionDate) || b.filingDate.localeCompare(a.filingDate));
-}
-
-function summarizeInsiders(transactions) {
-  const purchases = transactions.filter((item) => item.action === "purchase");
-  const sales = transactions.filter((item) => item.action === "sale");
-  return {
-    purchaseCount: purchases.length,
-    saleCount: sales.length,
-    purchaseValue: purchases.reduce((sum, item) => sum + (item.value ?? 0), 0),
-    saleValue: sales.reduce((sum, item) => sum + (item.value ?? 0), 0),
-    discretionarySaleCount: sales.filter((item) => !item.rule10b51).length,
-  };
 }
 
 function parseFinraDate(value) {
@@ -386,7 +452,33 @@ function emptyAnalyst(reason = "Analyst consensus was not collected for this com
 }
 
 function compactSignal(signal) {
-  return { ...signal, insider: { ...signal.insider, transactions: signal.insider.transactions.slice(0, 3) }, analyst: { ...signal.analyst, trend: signal.analyst.trend.slice(0, 1), actions: [] }, shortInterest: { ...signal.shortInterest, history: [] } };
+  const transactions = BOOTSTRAP_SIGNAL_SYMBOLS.has(signal.symbol) ? signal.insider.transactions.slice(0, 3) : [];
+  return { ...signal, insider: { ...signal.insider, transactions }, analyst: { ...signal.analyst, trend: signal.analyst.trend.slice(0, 1), actions: [] }, shortInterest: { ...signal.shortInterest, history: [] } };
+}
+
+function serializeLineOrientedIndex(output) {
+  const { signals, ...metadata } = output;
+  const lines = ["{"];
+  for (const [key, value] of Object.entries(metadata)) lines.push(`  ${JSON.stringify(key)}: ${JSON.stringify(value)},`);
+  lines.push('  "signals": {');
+  const entries = Object.entries(signals);
+  entries.forEach(([symbol, signal], index) => lines.push(`    ${JSON.stringify(symbol)}: ${JSON.stringify(signal)}${index === entries.length - 1 ? "" : ","}`));
+  lines.push("  }", "}");
+  return `${lines.join("\n")}\n`;
+}
+
+function normalizeStoredSignal(signal) {
+  const transactions = groupInsiderTransactions(signal.insider?.transactions ?? []);
+  return {
+    ...signal,
+    insider: {
+      ...signal.insider,
+      // Aggregate files intentionally keep only three example rows. Their
+      // complete summary must survive a targeted refresh of other symbols.
+      summary: signal.insider?.summary ?? summarizeInsiderTransactions(transactions),
+      transactions,
+    },
+  };
 }
 
 async function main() {
@@ -396,25 +488,32 @@ async function main() {
   const selectedStocks = SIGNAL_SYMBOLS.size ? allStocks.filter((stock) => SIGNAL_SYMBOLS.has(stock.symbol)) : allStocks;
   const stocks = SIGNAL_LIMIT ? selectedStocks.slice(0, SIGNAL_LIMIT) : selectedStocks;
   const baseline = await loadBaseline();
+  const detailBaselines = await loadDetailBaselines(stocks);
   process.stdout.write(`[signals] building ${stocks.length}/${allStocks.length} company signals\n`);
 
   const institutional = await buildInstitutionalSignals(stocks.map((stock) => stock.symbol));
   const bulkInsiders = await loadBulkInsiders(stocks);
   const now = new Date(generatedAt);
   const quarterStart = new Date(Date.UTC(now.getUTCFullYear(), Math.floor(now.getUTCMonth() / 3) * 3, 1)).toISOString().slice(0, 10);
-  const liveInsiders = await loadCurrentQuarterInsiders(stocks, quarterStart);
+  const knownAccessions = new Map(stocks.map((stock) => [stock.symbol, knownCompleteAccessions(detailBaselines.get(stock.symbol))]));
+  const liveInsiders = await loadCurrentQuarterInsiders(stocks, quarterStart, knownAccessions);
   const finra = await loadFinraShortInterest();
   const cutoff = new Date(now.getTime() - MAX_INSIDER_AGE_DAYS * 86_400_000).toISOString().slice(0, 10);
   const details = {};
 
   for (const stock of stocks) {
-    const previous = baseline.signals?.[stock.symbol];
-    const transactions = dedupeInsiders([...(bulkInsiders.get(stock.symbol) ?? []), ...(liveInsiders.get(stock.symbol) ?? []), ...(previous?.insider?.transactions ?? [])], cutoff);
+    const previous = detailBaselines.get(stock.symbol) ?? baseline.signals?.[stock.symbol];
+    const transactions = reconcileInsiderEvidence({
+      previousRows: previous?.insider?.transactions ?? [],
+      bulkRows: bulkInsiders.get(stock.symbol) ?? [],
+      liveRows: liveInsiders.get(stock.symbol) ?? [],
+      cutoff,
+    });
     details[stock.symbol] = {
       symbol: stock.symbol,
       insider: {
         asOf: transactions[0]?.filingDate ?? generatedAt.slice(0, 10),
-        summary: summarizeInsiders(transactions),
+        summary: summarizeInsiderTransactions(transactions),
         transactions: transactions.slice(0, MAX_INSIDER_TRANSACTIONS),
       },
       institutional: institutional[stock.symbol] ?? emptyInstitutional(),
@@ -423,30 +522,44 @@ async function main() {
     };
   }
 
+  const isPartialBuild = Boolean(SIGNAL_LIMIT || SIGNAL_SYMBOLS.size);
+  const mergedSignals = isPartialBuild
+    ? { ...Object.fromEntries(Object.entries(baseline.signals ?? {}).map(([symbol, signal]) => [symbol, normalizeStoredSignal(signal)])), ...Object.fromEntries(Object.entries(details).map(([symbol, signal]) => [symbol, compactSignal(signal)])) }
+    : Object.fromEntries(Object.entries(details).map(([symbol, signal]) => [symbol, compactSignal(signal)]));
+  const indexedSignals = Object.fromEntries(Object.entries(mergedSignals).map(([symbol, signal]) => [symbol, compactSignal(signal)]));
   const output = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt,
-    methodology: "Signals are computed locally from official SEC insider, SEC 13F, and FINRA short-interest disclosures. Insider activity includes direct open-market transaction codes P and S from a rolling one-year window. Institutional breadth compares one report period across tracked managers and exposes reporting progress. Short interest is the latest periodic FINRA publication, not a live estimate. Analyst data is supplemental and may be unavailable.",
+    methodology: "Signals are computed locally from official SEC insider, SEC 13F, and FINRA short-interest disclosures. Insider activity separates personal-capital purchases and reported sales from awards, option exercises, tax transactions, gifts, conversions, and other common-share ownership changes in a rolling one-year window. Sales are reported as activity rather than treated as the inverse of personal buying. Institutional breadth compares one report period across tracked managers and exposes reporting progress. Short interest is the latest periodic FINRA publication, not a live estimate. Analyst data is supplemental and may be unavailable.",
     sources: { insiders: INSIDER_SOURCE_PAGE, institutions: INSTITUTIONAL_SOURCE_PAGE, analysts: "https://finance.yahoo.com/", shortInterest: SHORT_SOURCE_PAGE },
     coverage: {
-      universe: stocks.length,
-      insiders: Object.values(details).filter((signal) => signal.insider.transactions.length).length,
-      shortInterest: Object.values(details).filter((signal) => signal.shortInterest.available).length,
-      institutions: Object.values(details).filter((signal) => signal.institutional.managersHolding > 0).length,
+      universe: Object.keys(indexedSignals).length,
+      insiders: Object.values(indexedSignals).filter((signal) => {
+        const summary = signal.insider.summary;
+        return summary.purchaseCount + summary.saleCount + summary.compensationCount + summary.administrativeCount > 0;
+      }).length,
+      shortInterest: Object.values(indexedSignals).filter((signal) => signal.shortInterest.available).length,
+      institutions: Object.values(indexedSignals).filter((signal) => signal.institutional.managersHolding > 0).length,
     },
-    signals: Object.fromEntries(Object.entries(details).map(([symbol, signal]) => [symbol, compactSignal(signal)])),
+    signals: indexedSignals,
   };
 
   if (!SIGNAL_LIMIT && !SIGNAL_SYMBOLS.size && Object.keys(output.signals).length !== allStocks.length) throw new Error("Signal output does not cover the complete market universe.");
-  const stagedDetails = await createStagedDirectory(DETAIL_DIR);
-  try {
-    await Promise.all(Object.entries(details).map(([symbol, signal]) => writeFile(path.join(stagedDetails, `${symbol.toLowerCase().replaceAll(".", "-")}.json`), `${JSON.stringify(signal)}\n`, "utf8")));
-    await replaceDirectory(stagedDetails, DETAIL_DIR);
-  } catch (error) {
-    await rm(stagedDetails, { recursive: true, force: true });
-    throw error;
+  if (isPartialBuild) {
+    await Promise.all(Object.entries(details).map(([symbol, signal]) => writeJsonAtomic(path.join(DETAIL_DIR, `${symbolSlug(symbol)}.json`), signal)));
+  } else {
+    const stagedDetails = await createStagedDirectory(DETAIL_DIR);
+    try {
+      await Promise.all(Object.entries(details).map(([symbol, signal]) => writeFile(path.join(stagedDetails, `${symbolSlug(symbol)}.json`), `${JSON.stringify(signal)}\n`, "utf8")));
+      await replaceDirectory(stagedDetails, DETAIL_DIR);
+    } catch (error) {
+      await rm(stagedDetails, { recursive: true, force: true });
+      throw error;
+    }
   }
-  await writeJsonAtomic(OUTPUT_PATH, output);
+  // One symbol per line keeps the eager index small while remaining friendly to
+  // Git delta compression and code review.
+  await writeTextAtomic(OUTPUT_PATH, serializeLineOrientedIndex(output));
   process.stdout.write(`[signals] wrote ${stocks.length} summaries and symbol details (${output.coverage.shortInterest} short, ${output.coverage.insiders} insider, ${output.coverage.institutions} institutional)\n`);
 }
 

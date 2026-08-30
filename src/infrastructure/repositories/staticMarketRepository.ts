@@ -1,4 +1,5 @@
 import type { MarketRepository } from "@/src/application/ports/repositories";
+import { symbolFileSlug } from "@/src/domain/symbolFile";
 import type { AnalyzedStock, MarketIndex } from "@/src/domain/stock";
 import { analyzeStock, summarizeStock } from "@/src/domain/analytics";
 import { parseMarketDataset, parseMarketIndex, parseRecentPrices, parseStockArchive } from "@/src/shared/contracts/marketData";
@@ -88,9 +89,9 @@ export function withSnapshotVersion(path: string, generatedAt: string): string {
 }
 
 function dataPath(symbol: string) {
-  return `./data/market/stocks/${symbol.toLowerCase().replaceAll(".", "-")}.json`;
+  return `./data/market/stocks/${symbolFileSlug(symbol)}.json`;
 }
 
 function recentDataPath(symbol: string) {
-  return `./data/market/recent/${symbol.toLowerCase().replaceAll(".", "-")}.json`;
+  return `./data/market/recent/${symbolFileSlug(symbol)}.json`;
 }

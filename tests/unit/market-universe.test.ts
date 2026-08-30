@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isEligibleSecurity, symbolSlug, universePolicy } from "../../scripts/market/universe.mjs";
+import { symbolFileSlug } from "@/src/domain/symbolFile";
 import { mergePriceHistories, trimHistoryYears } from "../../scripts/market/incremental.mjs";
 
 describe("market universe policy", () => {
@@ -39,6 +40,9 @@ describe("market universe policy", () => {
   it("creates stable Cloudflare-safe filenames", () => {
     expect(symbolSlug("BRK.B")).toBe("brk-b");
     expect(symbolSlug(" duol ")).toBe("duol");
+    expect(symbolSlug("CON")).toBe("con-ticker");
+    expect(symbolFileSlug("CON")).toBe("con-ticker");
+    expect(symbolFileSlug("BRK.B")).toBe("brk-b");
   });
 });
 

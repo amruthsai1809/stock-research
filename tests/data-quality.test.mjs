@@ -104,7 +104,7 @@ test("published snapshot contains explicit source labels", async () => {
   const { index } = await loadPublishedMarket();
   assert.match(index.sources.prices, /end-of-day/i);
   assert.match(index.sources.fundamentals, /SEC EDGAR/i);
-  if (index.schemaVersion === 2) assert.match(index.sources.universe, /Nasdaq.*SEC/i);
+  if (index.schemaVersion >= 2) assert.match(index.sources.universe, /Nasdaq.*SEC/i);
 });
 
 function shiftYears(date, years) {

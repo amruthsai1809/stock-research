@@ -10,19 +10,38 @@ export type IntelligenceFactorKey =
 
 export type IntelligenceStrategyId = "balanced" | "compounder" | "value" | "momentum" | "dip-hunter";
 
+export type InsiderActivityCategory =
+  | "personal_investment"
+  | "sale"
+  | "scheduled_sale"
+  | "tax_sale"
+  | "award"
+  | "option_exercise"
+  | "tax_withholding"
+  | "gift"
+  | "conversion"
+  | "issuer_disposition"
+  | "other";
+
 export type InsiderTransaction = {
   accession: string;
   ownerName: string;
   ownerRole: string;
   transactionDate: string;
   filingDate: string;
-  code: "P" | "S";
-  action: "purchase" | "sale";
+  code: string;
+  action: "purchase" | "sale" | "other";
+  category: InsiderActivityCategory;
+  direction: "acquired" | "disposed";
+  securityTitle: string;
   shares: number;
   price: number | null;
   value: number | null;
   sharesOwnedAfter: number | null;
+  directOrIndirect: "direct" | "indirect" | null;
+  natureOfOwnership: string | null;
   rule10b51: boolean;
+  filingContext: string | null;
   sourceUrl: string;
 };
 
@@ -44,6 +63,10 @@ export type InsiderActivitySummary = {
   purchaseValue: number;
   saleValue: number;
   discretionarySaleCount: number;
+  scheduledSaleCount: number;
+  taxRelatedSaleCount: number;
+  compensationCount: number;
+  administrativeCount: number;
 };
 
 export type AnalystTrend = {

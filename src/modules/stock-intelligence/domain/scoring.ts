@@ -159,20 +159,19 @@ function riskFactor(stock: StockSummary, peers: StockSummary[]): RawFactor {
 function insiderFactor(signal: ResearchSignal | undefined): RawFactor {
   if (!signal) return unavailable("insider", "The SEC ownership snapshot is unavailable for this company.");
   const transactions = signal.insider.transactions;
-  const purchases = transactions.filter((item) => item.action === "purchase");
-  const sales = transactions.filter((item) => item.action === "sale");
+  const purchases = transactions.filter((item) => item.category === "personal_investment");
+  const sales = transactions.filter((item) => ["sale", "scheduled_sale", "tax_sale"].includes(item.category));
   const summary = signal.insider.summary;
   const purchaseCount = summary.purchaseCount || purchases.length;
   const saleCount = summary.saleCount || sales.length;
   const purchaseValue = summary.purchaseValue || purchases.reduce((sum, item) => sum + (item.value ?? 0), 0);
   const saleValue = summary.saleValue || sales.reduce((sum, item) => sum + (item.value ?? 0), 0);
-  const discretionarySaleCount = summary.discretionarySaleCount || sales.filter((item) => !item.rule10b51).length;
-  if (!purchaseCount && !saleCount) return available("insider", 50, signal.insider.asOf, [{ label: "Open-market trades", value: "None found", direction: "neutral", detail: "No coded open-market purchase or sale appears in the loaded Forms 4/4-A window. This is neutral, not bullish." }]);
-  const raw = 50 + Math.min(32, purchaseCount * 8 + Math.log10(purchaseValue + 1) * 2) - Math.min(28, discretionarySaleCount * 5 + Math.log10(saleValue + 1));
+  if (!purchaseCount && !saleCount) return available("insider", 50, signal.insider.asOf, [{ label: "Personal investments", value: "None reported", direction: "neutral", detail: "No personal-capital purchase appears in the loaded Forms 4/4-A window. This is neutral, not negative." }]);
+  const raw = 50 + Math.min(35, purchaseCount * 8 + Math.log10(purchaseValue + 1) * 2);
   return available("insider", Math.round(clamp(raw)), signal.insider.asOf, [
-    { label: "Purchases", value: `${purchaseCount} · ${money(purchaseValue)}`, direction: purchaseCount ? "positive" : "neutral", detail: "Open-market purchases (transaction code P) in the loaded SEC window." },
-    { label: "Sales", value: `${saleCount} · ${money(saleValue)}`, direction: discretionarySaleCount ? "negative" : "neutral", detail: "Open-market sales (code S); 10b5-1 plan sales receive less negative weight." },
-    { label: "10b5-1 plan sales", value: String(Math.max(0, saleCount - discretionarySaleCount)), direction: "neutral", detail: "Planned sales are disclosed separately so they are not treated like discretionary selling." },
+    { label: "Personal investments", value: `${purchaseCount} · ${money(purchaseValue)}`, direction: purchaseCount ? "positive" : "neutral", detail: "Reported purchases made with personal or controlled capital. Only this evidence can raise the insider score." },
+    { label: "Share sales", value: `${saleCount} · ${money(saleValue)}`, direction: "neutral", detail: "Sales are disclosed as activity, not scored as the inverse of buying because personal motives are usually unknown." },
+    { label: "Scheduled / tax sales", value: `${summary.scheduledSaleCount} / ${summary.taxRelatedSaleCount}`, direction: "neutral", detail: "Reported trading-plan and tax-related sales are separated from sales whose context is not disclosed." },
   ]);
 }
 

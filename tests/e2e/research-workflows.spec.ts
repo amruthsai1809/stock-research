@@ -177,13 +177,23 @@ test("options lab links contract, time, volatility, charts, and worker output", 
 test("company research controls update every analysis surface without stale content", async ({ page }) => {
   await page.goto("/?view=company&symbol=AAPL");
   await expect(page.getByRole("heading", { name: /Apple/i }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "The business at a glance" })).toBeVisible();
+  await expect(page.getByText("Market cap", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What the market is paying" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Balance-sheet and ownership discipline" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How the stock has moved" })).toBeVisible();
+  await expect(page.getByText("Positioning snapshot", { exact: true })).toHaveCount(0);
+  if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/company-overview-desktop.png", fullPage: false });
   await page.getByRole("button", { name: "10Y", exact: true }).first().click();
   await page.getByRole("button", { name: "Candles", exact: true }).click();
   await expect(page.getByRole("button", { name: "Candles", exact: true })).toHaveAttribute("aria-pressed", "true");
   for (const control of ["200D", "Reset", "50D"] as const) await page.getByRole("button", { name: control, exact: true }).first().click();
 
   await page.getByRole("button", { name: "Ownership & activity" }).click();
-  await expect(page.getByRole("heading", { name: "Open-market insider activity" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Insider ownership & trades" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Purchases above zero · sales below zero" })).toBeVisible();
+  await expect(page.getByText("Personal purchases ↑", { exact: true })).toBeVisible();
+  await expect(page.getByText("Share sales ↓", { exact: true })).toBeVisible();
   for (const window of ["30D", "90D", "1Y"] as const) {
     await page.getByRole("button", { name: window, exact: true }).click();
     await expect(page.getByRole("button", { name: window, exact: true })).toHaveClass(/is-active/);
@@ -217,8 +227,10 @@ test("company research controls update every analysis surface without stale cont
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?view=company&symbol=AAPL");
+  await expect(page.getByRole("heading", { name: "The business at a glance" })).toBeVisible();
+  if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/company-overview-mobile.png", fullPage: false });
   await page.getByRole("button", { name: "Ownership & activity", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Open-market insider activity" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Insider ownership & trades" })).toBeVisible();
   const mobileWidth = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }));
   expect(mobileWidth.document).toBeLessThanOrEqual(mobileWidth.viewport + 1);
   if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/company-ownership-mobile.png", fullPage: false });
@@ -229,41 +241,65 @@ test("insider chart, filters, and SEC rows reconcile visibly", async ({ page }) 
   await page.goto(`/?view=company&symbol=${symbol}`);
   await expect(page.getByRole("heading", { name: hasFullDuolingoFixture ? /Duolingo/i : /Apple/i }).first()).toBeVisible();
   await page.getByRole("button", { name: "Ownership & activity", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Open-market insider activity" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Insider ownership & trades" })).toBeVisible();
   await page.getByRole("button", { name: "1Y", exact: true }).click();
 
+  await expect(page.getByRole("tab", { name: /Cash trades/i })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("button", { name: /^Sales \d+$/ })).toBeVisible();
   if (hasFullDuolingoFixture) {
-    const insiderRows = page.locator(".signal-table tbody tr");
-    await expect(insiderRows).toHaveCount(12);
-    await expect(page.getByRole("navigation", { name: "Insider transactions pages" })).toContainText(/1 \/ \d+/);
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(insiderRows).toHaveCount(12);
-    await expect(page.getByRole("navigation", { name: "Insider transactions pages" })).toContainText(/2 \/ \d+/);
-    await expect(page.getByText(/Showing 13–24 of \d+/, { exact: true })).toBeVisible();
-
-    await expect(page.getByRole("button", { name: "Purchases 1", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Purchases 1", exact: true }).click();
-    await expect(page.locator(".signal-table tbody")).toContainText("Shelton James H");
-    await expect(page.locator(".signal-table tbody")).toContainText("Mar 3, 2026");
-    await expect(page.locator(".signal-table tbody")).toContainText("$498.8K");
+    await expect(page.getByRole("button", { name: "Personal investments 1", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Personal investments 1", exact: true }).click();
+    const investment = page.locator(".insider-event").first();
+    await expect(investment).toContainText("Shelton James H");
+    await expect(investment).toContainText("Mar 3, 2026");
+    await expect(investment).toContainText("$498.8K");
+    await expect(investment).toContainText("Personal investment");
+    await investment.getByText("View filing details", { exact: true }).click();
+    await expect(investment.getByRole("link", { name: /Open SEC filing/i })).toHaveAttribute("href", /sec\.gov/i);
 
     await page.getByRole("button", { name: /^All \d+$/ }).click();
-    await page.getByRole("button", { name: /March 2026:.*purchases.*sales/i }).click();
-    await expect(page.locator(".signal-table tbody")).toContainText("Shelton James H");
-    await expect(page.getByText("Showing 1 of 1", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /March 2026:.*personal purchases.*share sales/i }).click();
+    await expect(page.locator(".insider-event-list")).toContainText("Shelton James H");
+
+    await page.getByRole("tab", { name: /All ownership changes/i }).click();
+    await expect(page.getByRole("tab", { name: /All ownership changes/i })).toHaveAttribute("aria-selected", "true");
+    await expectOwnershipMatrixReconciles(page);
+    await page.getByRole("button", { name: /^Compensation \d+$/ }).click();
+    await expect(page.locator(".insider-event").first()).toContainText(/Company stock award|Option exercised/);
   } else {
     await page.getByRole("button", { name: /^Sales \d+$/ }).click();
-    await expect(page.locator(".signal-table tbody tr").first()).toBeVisible();
-    await expect(page.locator(".signal-table tbody a").first()).toHaveAttribute("href", /sec\.gov/i);
+    await expect(page.locator(".insider-event").first()).toBeVisible();
+    await page.locator(".insider-event details").first().click();
+    await expect(page.locator(".insider-event a").first()).toHaveAttribute("href", /sec\.gov/i);
     const activeMonth = page.locator(".insider-flow-chart button:not(:disabled)").last();
     await activeMonth.click();
-    await expect(page.locator(".signal-table tbody tr").first()).toBeVisible();
+    await expect(page.locator(".insider-event").first()).toBeVisible();
+    await page.getByRole("tab", { name: /All ownership changes/i }).click();
+    await expectOwnershipMatrixReconciles(page);
   }
 
   await expect(page.getByText("Why this can differ from Robinhood", { exact: true })).toHaveCount(0);
   await expectAccessible(page);
   if (process.env.VISUAL_EVIDENCE === "1" && hasFullDuolingoFixture) await page.locator(".market-signal-card--wide").first().screenshot({ path: "outputs/visual-qa/duol-insider-reconciled.png" });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?view=company&symbol=${symbol}`);
+  await page.getByRole("button", { name: "Ownership & activity", exact: true }).click();
+  await page.getByRole("button", { name: "1Y", exact: true }).click();
+  await page.getByRole("tab", { name: /All ownership changes/i }).click();
+  await page.getByRole("button", { name: /^Compensation \d+$/ }).click();
+  await expect(page.locator(".insider-event").first()).toBeVisible();
+  const mobileWidth = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }));
+  expect(mobileWidth.document).toBeLessThanOrEqual(mobileWidth.viewport + 1);
+  await expectAccessible(page);
+  if (process.env.VISUAL_EVIDENCE === "1" && hasFullDuolingoFixture) {
+    await page.getByRole("heading", { name: "Insider ownership & trades" }).scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollBy(0, -80));
+    await page.screenshot({ path: "outputs/visual-qa/duol-insider-mobile.png", fullPage: false });
+    await page.locator(".insider-event").first().scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollBy(0, -150));
+    await page.screenshot({ path: "outputs/visual-qa/duol-insider-mobile-events.png", fullPage: false });
+  }
 });
 
 async function expectCompleteRange(locator: ReturnType<Page["locator"]>) {
@@ -272,6 +308,14 @@ async function expectCompleteRange(locator: ReturnType<Page["locator"]>) {
   expect(attributes.rendered).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   expect(attributes.rendered! <= attributes.start!).toBe(true);
   expect(Number(attributes.start!.slice(0, 4))).toBeLessThanOrEqual(2022);
+}
+
+async function expectOwnershipMatrixReconciles(page: Page) {
+  await expect(page.getByRole("heading", { name: "A monthly ownership-change matrix" })).toBeVisible();
+  await expect(page.locator(".ownership-event-grid")).toBeVisible();
+  const matrixTotal = (await page.locator(".ownership-event-grid header strong").allTextContents()).reduce((sum, value) => sum + Number.parseInt(value, 10), 0);
+  const visibleTotal = Number.parseInt((await page.getByRole("button", { name: /^All \d+$/ }).textContent())?.match(/\d+/)?.[0] ?? "0", 10);
+  expect(matrixTotal).toBe(visibleTotal);
 }
 
 async function expectAccessible(page: Page) {

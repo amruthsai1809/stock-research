@@ -3,20 +3,67 @@ import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/dom
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const finite = z.number().finite();
+const InsiderCategorySchema = z.enum([
+  "personal_investment",
+  "sale",
+  "scheduled_sale",
+  "tax_sale",
+  "award",
+  "option_exercise",
+  "tax_withholding",
+  "gift",
+  "conversion",
+  "issuer_disposition",
+  "other",
+]);
+
+function categoryFor(value: { code: string; action?: string; rule10b51: boolean; filingContext?: string | null }) {
+  if (value.code === "P" || value.action === "purchase") return "personal_investment" as const;
+  if (value.code === "S" || value.action === "sale") {
+    if (/(?:tax(?:es| liability| withholding)?|withholding obligation|sell[- ]to[- ]cover)/i.test(value.filingContext ?? "")) return "tax_sale" as const;
+    return value.rule10b51 ? "scheduled_sale" as const : "sale" as const;
+  }
+  if (value.code === "A") return "award" as const;
+  if (["M", "O", "X"].includes(value.code)) return "option_exercise" as const;
+  if (value.code === "F") return "tax_withholding" as const;
+  if (value.code === "G") return "gift" as const;
+  if (value.code === "C") return "conversion" as const;
+  if (value.code === "D") return "issuer_disposition" as const;
+  return "other" as const;
+}
+
 const InsiderTransactionSchema = z.object({
   accession: z.string().min(1),
   ownerName: z.string().min(1),
   ownerRole: z.string(),
   transactionDate: date,
   filingDate: date,
-  code: z.enum(["P", "S"]),
-  action: z.enum(["purchase", "sale"]),
+  code: z.string().regex(/^[A-Z]$/),
+  action: z.enum(["purchase", "sale", "other"]).optional(),
+  category: InsiderCategorySchema.optional(),
+  direction: z.enum(["acquired", "disposed"]).optional(),
+  securityTitle: z.string().min(1).optional(),
   shares: z.number().nonnegative(),
   price: z.number().nonnegative().nullable(),
   value: z.number().nonnegative().nullable(),
   sharesOwnedAfter: z.number().nonnegative().nullable(),
+  directOrIndirect: z.enum(["direct", "indirect"]).nullable().optional(),
+  natureOfOwnership: z.string().nullable().optional(),
   rule10b51: z.boolean(),
+  filingContext: z.string().nullable().optional(),
   sourceUrl: z.string().url(),
+}).transform((value) => {
+  const category = value.category ?? categoryFor(value);
+  return {
+    ...value,
+    action: category === "personal_investment" ? "purchase" as const : ["sale", "scheduled_sale", "tax_sale"].includes(category) ? "sale" as const : "other" as const,
+    category,
+    direction: value.direction ?? (category === "personal_investment" ? "acquired" as const : value.action === "sale" ? "disposed" as const : "acquired" as const),
+    securityTitle: value.securityTitle ?? "Reported security",
+    directOrIndirect: value.directOrIndirect ?? null,
+    natureOfOwnership: value.natureOfOwnership ?? null,
+    filingContext: value.filingContext ?? null,
+  };
 });
 
 const InsiderSummarySchema = z.object({
@@ -25,6 +72,10 @@ const InsiderSummarySchema = z.object({
   purchaseValue: z.number().nonnegative(),
   saleValue: z.number().nonnegative(),
   discretionarySaleCount: z.number().int().nonnegative(),
+  scheduledSaleCount: z.number().int().nonnegative().default(0),
+  taxRelatedSaleCount: z.number().int().nonnegative().default(0),
+  compensationCount: z.number().int().nonnegative().default(0),
+  administrativeCount: z.number().int().nonnegative().default(0),
 });
 
 const InsiderSchema = z.object({
@@ -32,9 +83,12 @@ const InsiderSchema = z.object({
   summary: InsiderSummarySchema.optional(),
   transactions: z.array(InsiderTransactionSchema),
 }).transform((value) => {
-  if (value.summary) return value as typeof value & { summary: z.infer<typeof InsiderSummarySchema> };
-  const purchases = value.transactions.filter((item) => item.action === "purchase");
-  const sales = value.transactions.filter((item) => item.action === "sale");
+  const purchases = value.transactions.filter((item) => item.category === "personal_investment");
+  const sales = value.transactions.filter((item) => ["sale", "scheduled_sale", "tax_sale"].includes(item.category));
+  const scheduledSales = sales.filter((item) => item.category === "scheduled_sale");
+  const taxSales = sales.filter((item) => item.category === "tax_sale");
+  const compensation = value.transactions.filter((item) => ["award", "option_exercise"].includes(item.category));
+  const administrative = value.transactions.filter((item) => !purchases.includes(item) && !sales.includes(item) && !compensation.includes(item));
   return {
     ...value,
     summary: {
@@ -42,7 +96,11 @@ const InsiderSchema = z.object({
       saleCount: sales.length,
       purchaseValue: purchases.reduce((sum, item) => sum + (item.value ?? 0), 0),
       saleValue: sales.reduce((sum, item) => sum + (item.value ?? 0), 0),
-      discretionarySaleCount: sales.filter((item) => !item.rule10b51).length,
+      discretionarySaleCount: sales.length - scheduledSales.length - taxSales.length,
+      scheduledSaleCount: scheduledSales.length,
+      taxRelatedSaleCount: taxSales.length,
+      compensationCount: compensation.length,
+      administrativeCount: administrative.length,
     },
   };
 });

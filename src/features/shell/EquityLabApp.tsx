@@ -144,7 +144,7 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
       <main className="content"><Suspense fallback={<FeatureLoading />}>
         {view === "discover" && <Discover stocks={stocks} onSelect={selectStock} onOpenDipFinder={() => navigate("dips")} marketRepository={services.marketRepository} />}
         {view === "dips" && <DipFinder stocks={stocks} onSelect={selectStock} watchlist={watchlist} onToggleWatchlist={toggleWatchlist} marketRepository={services.marketRepository} />}
-        {view === "company" && selectedDetail.stock && <CompanyResearch stock={selectedDetail.stock} researchSignal={selectedSignal} isWatched={watchlist.includes(selectedDetail.stock.symbol)} onToggleWatchlist={toggleWatchlist} onOpenValuation={() => navigate("valuation")} />}
+        {view === "company" && selectedDetail.stock && <CompanyResearch stock={selectedDetail.stock} marketCap={selectedStock?.marketCap ?? null} researchSignal={selectedSignal} isWatched={watchlist.includes(selectedDetail.stock.symbol)} onToggleWatchlist={toggleWatchlist} onOpenValuation={() => navigate("valuation")} />}
         {view === "company" && !selectedDetail.stock && <DetailLoading error={selectedDetail.error} />}
         {view === "screener" && <Screener stocks={stocks} onSelect={selectStock} />}
         {view === "compare" && <Compare stocks={stocks} onSelect={selectStock} marketRepository={services.marketRepository} />}
