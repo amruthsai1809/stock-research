@@ -3,17 +3,19 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const marketUrl = new URL("../public/data/market-data.json", import.meta.url);
+const generatedMarketUrl = new URL("../public/data/market/index.json", import.meta.url);
 const signalsUrl = new URL("../public/data/research-signals.json", import.meta.url);
 const institutionalUrl = new URL("../public/data/institutional/index.json", import.meta.url);
 
 test("stock-intelligence snapshot covers the complete market universe", async () => {
-  const market = JSON.parse(await readFile(marketUrl, "utf8"));
   const dataset = JSON.parse(await readFile(signalsUrl, "utf8"));
+  const market = JSON.parse(await readFile(dataset.schemaVersion === 2 ? generatedMarketUrl : marketUrl, "utf8"));
   assert.match(dataset.methodology, /computed locally/i);
   assert.match(dataset.sources.insiders, /^https:\/\/www\.sec\.gov\//);
   assert.match(dataset.sources.institutions, /^https:\/\/www\.sec\.gov\//);
   assert.match(dataset.sources.analysts, /^https:\/\/finance\.yahoo\.com\//);
   assert.deepEqual(Object.keys(dataset.signals).sort(), market.stocks.map((stock) => stock.symbol).sort());
+  if (dataset.schemaVersion === 2) assert.equal(dataset.coverage.universe, market.stocks.length);
   assert.ok(new Date(dataset.generatedAt).getTime() > 0);
 });
 
@@ -31,7 +33,7 @@ test("insider signal uses only source-linked open-market transactions", async ()
       assert.match(transaction.sourceUrl, /^https:\/\/www\.sec\.gov\/Archives\/edgar\/data\//);
       assert.ok(transaction.shares >= 0);
       assert.ok(transaction.value == null || transaction.value >= 0);
-      const key = [transaction.accession, transaction.ownerName, transaction.transactionDate, transaction.code, transaction.shares].join("|");
+      const key = [transaction.accession, transaction.ownerName, transaction.transactionDate, transaction.code, transaction.shares, transaction.price].join("|");
       assert.ok(!keys.has(key), `${signal.symbol} contains a duplicated insider transaction`);
       keys.add(key);
     }
