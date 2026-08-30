@@ -67,7 +67,12 @@ export class StaticMarketRepository implements MarketRepository {
     const index = await this.loadIndex();
     const summary = index.stocks.find((stock) => stock.symbol === symbol);
     if (!summary) throw new Error(`${symbol} is not present in this market snapshot`);
-    const [archiveResponse, recentResponse] = await Promise.all([fetch(summary.dataPath), fetch(summary.recentDataPath)]);
+    // The index and detail files form one immutable logical snapshot. Versioning
+    // detail URLs with the index timestamp prevents a browser from combining a
+    // newly deployed index with a still-fresh detail response from the prior day.
+    const archiveUrl = withSnapshotVersion(summary.dataPath, index.generatedAt);
+    const recentUrl = withSnapshotVersion(summary.recentDataPath, index.generatedAt);
+    const [archiveResponse, recentResponse] = await Promise.all([fetch(archiveUrl), fetch(recentUrl)]);
     if (!archiveResponse.ok) throw new Error(`${symbol} archive returned ${archiveResponse.status}`);
     if (!recentResponse.ok) throw new Error(`${symbol} recent prices returned ${recentResponse.status}`);
     const archive = parseStockArchive(await archiveResponse.json());
@@ -75,6 +80,11 @@ export class StaticMarketRepository implements MarketRepository {
     if (archive.symbol !== symbol || recent.symbol !== symbol) throw new Error(`${symbol} history files failed their identity check`);
     return analyzeStock({ ...archive, prices: [...archive.prices, ...recent.prices] });
   }
+}
+
+export function withSnapshotVersion(path: string, generatedAt: string): string {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}snapshot=${encodeURIComponent(generatedAt)}`;
 }
 
 function dataPath(symbol: string) {
