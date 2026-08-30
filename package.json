@@ -30,7 +30,7 @@
   "dependencies": {
     "lightweight-charts": "5.2.0",
     "next": "16.2.12",
-    "pdfjs-dist": "^5.4.149",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.1.5"
