@@ -52,10 +52,11 @@ function SignalSummary({ label, value, detail, tone }: { label: string; value: s
 }
 
 function InsiderActivity({ signal }: { signal?: ResearchSignal }) {
+  const pageSize = 12;
   const [windowDays, setWindowDays] = useState<30 | 90 | 366>(90);
   const [actionFilter, setActionFilter] = useState<"all" | "purchase" | "sale">("all");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
-  const [visibleRows, setVisibleRows] = useState(12);
+  const [page, setPage] = useState(0);
   const transactions = useMemo(() => {
     const rows = signal?.insider.transactions ?? [];
     const anchor = signal?.insider.asOf ? new Date(`${signal.insider.asOf}T00:00:00Z`) : new Date();
@@ -70,10 +71,13 @@ function InsiderActivity({ signal }: { signal?: ResearchSignal }) {
     (actionFilter === "all" || trade.action === actionFilter)
     && (!selectedMonth || trade.transactionDate.startsWith(selectedMonth))
   ));
+  const pageCount = Math.max(1, Math.ceil(tableTransactions.length / pageSize));
+  const firstVisibleRow = page * pageSize;
+  const lastVisibleRow = Math.min(firstVisibleRow + pageSize, tableTransactions.length);
   const selectedMonthLabel = months.find((month) => month.key === selectedMonth)?.longLabel;
 
   return <section className="panel market-signal-card market-signal-card--wide">
-    <div className="panel-heading"><div><span className="eyebrow">SEC Forms 4 / 4-A</span><h2>Open-market insider activity</h2><p>Official transaction codes P and S only. Awards, option exercises, gifts, and tax withholding are excluded.</p></div><div className="signal-heading-actions"><div className="segmented-control segmented-control--compact" aria-label="Insider transaction window">{([30, 90, 366] as const).map((days) => <button type="button" key={days} className={windowDays === days ? "is-active" : ""} onClick={() => { setWindowDays(days); setSelectedMonth(null); setVisibleRows(12); }}>{days === 366 ? "1Y" : `${days}D`}</button>)}</div><span className="method-chip">As of {shortDate(signal?.insider.asOf ?? null)}</span></div></div>
+    <div className="panel-heading"><div><span className="eyebrow">SEC Forms 4 / 4-A</span><h2>Open-market insider activity</h2><p>Official transaction codes P and S only. Awards, option exercises, gifts, and tax withholding are excluded.</p></div><div className="signal-heading-actions"><div className="segmented-control segmented-control--compact" aria-label="Insider transaction window">{([30, 90, 366] as const).map((days) => <button type="button" key={days} className={windowDays === days ? "is-active" : ""} onClick={() => { setWindowDays(days); setSelectedMonth(null); setPage(0); }}>{days === 366 ? "1Y" : `${days}D`}</button>)}</div><span className="method-chip">As of {shortDate(signal?.insider.asOf ?? null)}</span></div></div>
     {transactions.length ? <>
       <div
         className="insider-flow-chart"
@@ -88,24 +92,24 @@ function InsiderActivity({ signal }: { signal?: ResearchSignal }) {
           disabled={!hasActivity}
           aria-pressed={selectedMonth === month.key}
           aria-label={`${month.longLabel}: ${compactMoney(month.purchases)} purchases and ${compactMoney(month.sales)} sales`}
-          onClick={() => { setSelectedMonth((current) => current === month.key ? null : month.key); setVisibleRows(12); }}
+          onClick={() => { setSelectedMonth((current) => current === month.key ? null : month.key); setPage(0); }}
         ><span className="insider-flow-chart__buy"><i style={{ height: `${Math.max(month.purchases ? 3 : 0, (month.purchases / max) * 100)}%` }} /></span><span className="insider-flow-chart__zero" /><span className="insider-flow-chart__sell"><i style={{ height: `${Math.max(month.sales ? 3 : 0, (month.sales / max) * 100)}%` }} /></span><b>{month.label}</b></button>;
       })}</div>
       <div className="insider-legend"><span><i className="is-buy" />Purchases <b>{purchaseCount}</b></span><span><i className="is-sale" />Sales <b>{saleCount}</b></span><small>Disclosed transaction value · select a month to inspect it</small></div>
       <div className="insider-table-toolbar">
         <div className="segmented-control segmented-control--compact" aria-label="Filter insider transactions">
-          <button type="button" className={actionFilter === "all" ? "is-active" : ""} onClick={() => { setActionFilter("all"); setVisibleRows(12); }}>All <span>{transactions.length}</span></button>
-          <button type="button" className={actionFilter === "purchase" ? "is-active" : ""} onClick={() => { setActionFilter("purchase"); setVisibleRows(12); }}>Purchases <span>{purchaseCount}</span></button>
-          <button type="button" className={actionFilter === "sale" ? "is-active" : ""} onClick={() => { setActionFilter("sale"); setVisibleRows(12); }}>Sales <span>{saleCount}</span></button>
+          <button type="button" className={actionFilter === "all" ? "is-active" : ""} onClick={() => { setActionFilter("all"); setPage(0); }}>All <span>{transactions.length}</span></button>
+          <button type="button" className={actionFilter === "purchase" ? "is-active" : ""} onClick={() => { setActionFilter("purchase"); setPage(0); }}>Purchases <span>{purchaseCount}</span></button>
+          <button type="button" className={actionFilter === "sale" ? "is-active" : ""} onClick={() => { setActionFilter("sale"); setPage(0); }}>Sales <span>{saleCount}</span></button>
         </div>
         <div aria-live="polite">
-          {selectedMonthLabel && <button type="button" className="method-chip" onClick={() => { setSelectedMonth(null); setVisibleRows(12); }}>{selectedMonthLabel} ×</button>}
-          <small>Showing {Math.min(visibleRows, tableTransactions.length)} of {tableTransactions.length}</small>
+          {selectedMonthLabel && <button type="button" className="method-chip" onClick={() => { setSelectedMonth(null); setPage(0); }}>{selectedMonthLabel} ×</button>}
+          <small>Showing {firstVisibleRow + 1}{lastVisibleRow > firstVisibleRow + 1 ? `–${lastVisibleRow}` : ""} of {tableTransactions.length}</small>
         </div>
       </div>
       {tableTransactions.length ? <>
-        <div className="signal-table-wrap"><table className="data-table signal-table"><thead><tr><th>Date</th><th>Insider</th><th>Action</th><th>Value</th><th>After trade</th><th>Source</th></tr></thead><tbody>{tableTransactions.slice(0, visibleRows).map((trade) => <tr key={`${trade.accession}-${trade.ownerName}-${trade.transactionDate}-${trade.shares}`}><td>{shortDate(trade.transactionDate)}</td><td><b>{trade.ownerName}</b><small>{trade.ownerRole}</small></td><td><Tag tone={trade.action === "purchase" ? "good" : "warn"}>{trade.action}</Tag>{trade.rule10b51 && <small>10b5-1 plan</small>}</td><td>{trade.value == null ? `${formatNumber(trade.shares)} sh.` : compactMoney(trade.value)}</td><td>{trade.sharesOwnedAfter == null ? "—" : `${formatNumber(trade.sharesOwnedAfter)} sh.`}</td><td><a href={trade.sourceUrl} target="_blank" rel="noreferrer">SEC filing ↗</a></td></tr>)}</tbody></table></div>
-        {visibleRows < tableTransactions.length && <button type="button" className="secondary-button insider-show-more" onClick={() => setVisibleRows((current) => current + 12)}>Show 12 more</button>}
+        <div className="signal-table-wrap"><table className="data-table signal-table"><thead><tr><th>Date</th><th>Insider</th><th>Action</th><th>Value</th><th>After trade</th><th>Source</th></tr></thead><tbody>{tableTransactions.slice(firstVisibleRow, lastVisibleRow).map((trade) => <tr key={`${trade.accession}-${trade.ownerName}-${trade.transactionDate}-${trade.shares}`}><td>{shortDate(trade.transactionDate)}</td><td><b>{trade.ownerName}</b><small>{trade.ownerRole}</small></td><td><Tag tone={trade.action === "purchase" ? "good" : "warn"}>{trade.action}</Tag>{trade.rule10b51 && <small>10b5-1 plan</small>}</td><td>{trade.value == null ? `${formatNumber(trade.shares)} sh.` : compactMoney(trade.value)}</td><td>{trade.sharesOwnedAfter == null ? "—" : `${formatNumber(trade.sharesOwnedAfter)} sh.`}</td><td><a href={trade.sourceUrl} target="_blank" rel="noreferrer">SEC filing ↗</a></td></tr>)}</tbody></table></div>
+        {pageCount > 1 && <nav className="table-pagination insider-pagination" aria-label="Insider transactions pages"><span>{firstVisibleRow + 1}–{lastVisibleRow} of {tableTransactions.length}</span><div><button type="button" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>Previous</button><b>{page + 1} / {pageCount}</b><button type="button" disabled={page >= pageCount - 1} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}>Next</button></div></nav>}
       </> : <Unavailable title="No transactions match these filters" detail="Clear the month or action filter to restore the full transaction list." />}
       <details className="insider-methodology"><summary>Why this can differ from Robinhood</summary><p>Equity Lab reports raw SEC open-market purchase and sale lines. Robinhood’s TipRanks view also classifies Form 4 activity as informative or uninformative and may display grants, automatic transactions, and estimated values. The two charts therefore do not use the same transaction universe or aggregation.</p></details>
     </> : <Unavailable title={`No open-market transactions in the selected ${windowDays === 366 ? "year" : `${windowDays} days`}`} detail="This is neutral. Equity awards and other non-open-market transaction codes are intentionally excluded." />}

@@ -234,6 +234,14 @@ test("insider chart, filters, and SEC rows reconcile visibly", async ({ page }) 
 
   await expect(page.getByRole("button", { name: /^Sales \d+$/ })).toBeVisible();
   if (hasFullDuolingoFixture) {
+    const insiderRows = page.locator(".signal-table tbody tr");
+    await expect(insiderRows).toHaveCount(12);
+    await expect(page.getByRole("navigation", { name: "Insider transactions pages" })).toContainText(/1 \/ \d+/);
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(insiderRows).toHaveCount(12);
+    await expect(page.getByRole("navigation", { name: "Insider transactions pages" })).toContainText(/2 \/ \d+/);
+    await expect(page.getByText(/Showing 13–24 of \d+/, { exact: true })).toBeVisible();
+
     await expect(page.getByRole("button", { name: "Purchases 1", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Purchases 1", exact: true }).click();
     await expect(page.locator(".signal-table tbody")).toContainText("Shelton James H");

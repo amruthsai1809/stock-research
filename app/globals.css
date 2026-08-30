@@ -1671,7 +1671,7 @@ button.leaderboard-table:hover { background: var(--surface-muted); box-shadow: i
 .signal-table td > small, .signal-table td > b { display: block; }
 .signal-table td > small { color: var(--ink-faint); }
 .signal-table a { color: var(--teal); font-size: 10px; font-weight: 700; }
-.insider-show-more { display: flex; margin: 12px auto 0; }
+.insider-pagination { padding-top: 12px; }
 .insider-methodology { margin-top: 14px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink-soft); background: var(--surface-muted); font-size: 10px; }
 .insider-methodology summary { color: var(--ink); font-weight: 700; cursor: pointer; }
 .insider-methodology p { margin-top: 8px; max-width: 920px; }
