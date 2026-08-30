@@ -261,8 +261,7 @@ test("insider chart, filters, and SEC rows reconcile visibly", async ({ page }) 
     await expect(page.locator(".signal-table tbody tr").first()).toBeVisible();
   }
 
-  await page.getByText("Why this can differ from Robinhood", { exact: true }).click();
-  await expect(page.getByText(/Robinhood’s TipRanks view also classifies Form 4 activity/i)).toBeVisible();
+  await expect(page.getByText("Why this can differ from Robinhood", { exact: true })).toHaveCount(0);
   await expectAccessible(page);
   if (process.env.VISUAL_EVIDENCE === "1" && hasFullDuolingoFixture) await page.locator(".market-signal-card--wide").first().screenshot({ path: "outputs/visual-qa/duol-insider-reconciled.png" });
 });
