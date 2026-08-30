@@ -84,6 +84,7 @@ npm run test:unit           # unit tests with coverage thresholds
 npm run test:data           # generated-data and architecture contracts
 npm run test:e2e            # real Chromium workflows and accessibility
 npm run bundle:check        # client-asset budgets
+npm run cloudflare:check    # Worker size, modules, and static-asset limits
 npm run security:check      # production dependency audit
 npm test                    # types, unit coverage, build, bundle, and data
 npm run quality             # complete non-browser quality gate
