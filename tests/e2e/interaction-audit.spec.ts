@@ -53,7 +53,7 @@ test("Dip Finder controls all produce visible state changes", async ({ page }) =
     await page.getByRole("button", { name: "Previous", exact: true }).click();
     await expect(page.locator(".table-pagination b")).toContainText("1 /");
   } else {
-    await expect(page.locator(".results-table tbody tr")).not.toHaveCount(0);
+    await expect(page.locator(".dip-table tbody tr")).not.toHaveCount(0);
   }
   await expectNoOverflow(page);
 });
@@ -127,7 +127,7 @@ test("Stock Intelligence controls stay responsive with the complete universe", a
   }
 
   const search = page.locator(".ranking-toolbar input");
-  await search.fill("microsoft corp");
+  await search.fill("MSFT micro");
   await expect(rankingRows).toHaveCount(1);
   await rankingRows.first().click();
   await expect(page.locator(".score-spotlight")).toContainText("MSFT");

@@ -1692,11 +1692,11 @@ button.leaderboard-table:hover { background: var(--surface-muted); box-shadow: i
 .target-ladder > div .target-ladder__price { width: 13px; height: 13px; background: var(--ink); }
 .target-ladder > div .target-ladder__mean { width: 11px; height: 11px; background: var(--blue); }
 .target-ladder dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 0; }
-.target-ladder dl span { display: grid; }
+.target-ladder dl > div { display: grid; }
 .target-ladder dt { color: var(--ink-faint); font-size: 7px; }
 .target-ladder dd { margin: 0; font: 700 10px var(--font-geist-mono), monospace; }
-.target-ladder dl span:nth-child(2), .target-ladder dl span:nth-child(3) { text-align: center; }
-.target-ladder dl span:last-child { text-align: right; }
+.target-ladder dl > div:nth-child(2), .target-ladder dl > div:nth-child(3) { text-align: center; }
+.target-ladder dl > div:last-child { text-align: right; }
 .analyst-actions { display: grid; margin-top: 13px; border-top: 1px solid var(--line); }
 .analyst-actions article { min-height: 48px; display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
 .analyst-actions article > div, .analyst-actions article > span:last-child { display: grid; }
