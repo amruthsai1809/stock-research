@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { MarketRepository } from "@/src/application/ports/repositories";
 import type { AnalyzedStock } from "@/src/domain/stock";
+import type { ResearchSignalRepository } from "@/src/application/ports/repositories";
+import type { ResearchSignal } from "@/src/modules/stock-intelligence/domain/types";
 
 type DetailState = {
   stocks: AnalyzedStock[];
@@ -36,4 +38,24 @@ export function useStockDetails(repository: MarketRepository, symbols: string[])
 export function useStockDetail(repository: MarketRepository, symbol: string | undefined) {
   const state = useStockDetails(repository, symbol ? [symbol] : []);
   return { stock: state.stocks[0] ?? null, loading: state.loading, error: state.error };
+}
+
+export function useResearchSignal(
+  repository: ResearchSignalRepository,
+  symbol: string | undefined,
+  fallback?: ResearchSignal,
+) {
+  const normalized = symbol?.trim().toUpperCase();
+  const [state, setState] = useState<{ key: string; signal: ResearchSignal | null }>({ key: "", signal: null });
+
+  useEffect(() => {
+    let active = true;
+    if (!normalized) return () => { active = false; };
+    repository.loadSymbol(normalized)
+      .then((signal) => { if (active) setState({ key: normalized, signal }); })
+      .catch(() => { if (active) setState({ key: normalized, signal: fallback ?? null }); });
+    return () => { active = false; };
+  }, [fallback, normalized, repository]);
+
+  return state.key === normalized ? state.signal ?? fallback : fallback;
 }

@@ -36,8 +36,9 @@ Nasdaq screen + SEC identifiers + EOD provider
 ```
 
 - `public/data/market/index.json` contains compact, precomputed summaries for search, sorting, screening, and scores.
+- `public/data/research-signals.json` is a compact signal directory. Full insider, short-interest, and 13F evidence lives in lazy-loaded `public/data/signals/<symbol>.json` files, so opening Equity Lab does not transfer the whole research dataset.
 - A selected chart fetches only that symbol’s stable archive and small current-year delta. Requests are validated, cached, and deduplicated by the repository adapter.
-- Production market files are generated in the GitHub Actions workspace, deployed directly to Cloudflare, and ignored by Git. There are no dated daily copies and no automated data commits.
+- Production market and signal files are generated in the GitHub Actions workspace, deployed directly to Cloudflare, and ignored by Git. There are no dated daily copies and no automated data commits.
 - Stable file paths let Cloudflare reuse unchanged historical assets. On an ordinary trading day only the index and current-year deltas change.
 - Scheduled refreshes use the last validated Cloudflare deployment as an immutable baseline, merge only the newest end-of-day sessions, and carry forward SEC annuals. This avoids refetching ten years of source data and tolerates SEC blocking shared CI runner addresses.
 - The repository retains a small legacy development fixture so a clean clone can build and test without a network backfill.
@@ -77,7 +78,7 @@ npm run dev                 # local development server
 npm run data:update         # universe, 10Y prices, and SEC fundamentals
 npm run data:benchmarks     # long SPY, QQQ, and VTI histories
 npm run data:intelligence   # institutional and public-disclosure snapshots
-npm run data:signals        # SEC insider and market-opinion signals
+npm run data:signals        # SEC insider, FINRA short-interest, and 13F signals
 npm run typecheck           # strict TypeScript validation
 npm run lint                # static code checks
 npm run build               # production Cloudflare build
@@ -94,7 +95,7 @@ npm run deploy:cloudflare   # deploy a validated build with Wrangler
 
 ## Automation and deployment
 
-`.github/workflows/quality.yml` validates every push and pull request. `.github/workflows/update-market-data.yml` runs after U.S. market days, creates the production data entirely in the ephemeral runner, validates it, builds once, and deploys the result. It requires only `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets; neither is exposed to the client.
+`.github/workflows/quality.yml` validates every push and pull request. `.github/workflows/update-market-data.yml` runs after U.S. market days, creates the production data entirely in the ephemeral runner, validates it, builds once, and deploys the result. Insider filings and newly available 13F reports are discovered on every business-day run. The job checks FINRA on every run but publishes a new short-interest observation only when FINRA releases one of its official twice-monthly files. It requires only `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets; neither is exposed to the client.
 
 The Cloudflare project uses static assets plus the Vinext application Worker. Keep it on the Workers Free plan for a hard no-spend operating boundary. The canonical production hostname is `el.amruthg.com`; `equitylab.amruthg.com` is retained only as a permanent redirect.
 
@@ -105,6 +106,7 @@ The Cloudflare project uses static assets plus the Vinext application Worker. Ke
 - Prices are end-of-day community data and are never described as real time.
 - Missing source facts remain missing; the product does not manufacture values.
 - Institutional and public-official evidence links to primary filings.
+- Insider activity is limited to SEC Form 4/4-A open-market purchase and sale codes. Short interest uses FINRA's official biweekly files, and tracked institutional positions use a single consistent Form 13F report period.
 - Stock Intelligence scoring is deterministic. Optional AI explains an already-computed evidence packet and never supplies hidden score inputs.
 - There is no login. Theme and watchlist preferences are stored locally. Imported portfolio records and optional AI keys remain in memory unless the visitor explicitly exports or sends an evidence packet.
 

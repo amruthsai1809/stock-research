@@ -28,6 +28,7 @@ jobs:
           MARKET_CONCURRENCY: 6
           MARKET_REFRESH_MODE: incremental
           MARKET_BASE_URL: https://el.amruthg.com
+          SIGNAL_BASE_URL: https://el.amruthg.com
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:data

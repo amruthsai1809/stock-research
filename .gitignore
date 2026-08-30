@@ -48,4 +48,5 @@ next-env.d.ts
 # directly to Cloudflare. Stable per-symbol paths are overwritten in place;
 # daily snapshots are never committed to Git history.
 /public/data/market/
+/public/data/signals/
 /public/data/.market-stage-*/

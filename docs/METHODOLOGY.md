@@ -57,6 +57,14 @@ The model omits bid–ask spreads, commissions, taxes, liquidity, discrete divid
 
 The product preserves missing values and exposes reporting dates. Composite models treat missing factors as neutral rather than inferring undisclosed values. This prevents absence of data from being mistaken for strong or weak performance.
 
+## Ownership and activity signals
+
+Insider activity comes from SEC Forms 4 and 4/A. Equity Lab counts only open-market purchase and sale transaction codes, keeps the filing and transaction dates distinct, and aggregates one year of activity even when the detailed table is capped for presentation. The business-day refresh checks the current quarter for newly filed forms and combines them with recent SEC quarterly bulk archives.
+
+Short interest comes from FINRA's official equity short-interest files. FINRA normally publishes this dataset twice monthly, so checking it every business day improves discovery latency but does not create a new observation when the source has not changed. Short interest is not daily short volume. Percentage of float is shown only when a reliable float value is available; otherwise the interface labels the denominator as shares outstanding. Days to cover uses reported short interest divided by the available average-volume observation.
+
+Institutional breadth is limited to the explicitly tracked Form 13F manager registry. A company view uses the latest report period shared by the generated manager profiles and reports both the number of managers that filed that period and the number expected. Adds, trims, entries, and exits compare share counts between consistent quarter-end snapshots. They are delayed disclosures of specified long positions, not real-time ownership or evidence of a current trade.
+
 ## Portfolio comparison
 
 Portfolio activity is parsed and normalized locally. Holdings are reconstructed from buys, sales, splits, fees, dividends, deposits, and withdrawals that appear in the imported history. The product prices supported securities with the latest available end-of-day snapshot.

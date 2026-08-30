@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import type { StockSummary } from "@/src/domain/stock";
 import { searchCompanies } from "@/src/domain/companySearch";
 import { StockMark } from "@/src/components/ui";
@@ -12,6 +13,7 @@ export function CompanyPicker({
   onSelect,
   onClose,
   align = "left",
+  ownerRef,
 }: {
   stocks: StockSummary[];
   excludedSymbols: string[];
@@ -19,9 +21,11 @@ export function CompanyPicker({
   onSelect: (symbol: string) => void;
   onClose: () => void;
   align?: "left" | "right";
+  ownerRef?: RefObject<HTMLElement | null>;
 }) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [useMobilePortal, setUseMobilePortal] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches);
   const panelRef = useRef<HTMLElement>(null);
   const listId = useId();
   const excluded = useMemo(() => new Set(excludedSymbols), [excludedSymbols]);
@@ -31,19 +35,31 @@ export function CompanyPicker({
   );
 
   useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const update = () => setUseMobilePortal(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
     const closeWhenOutside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !panelRef.current?.contains(event.target)) onClose();
+      if (
+        event.target instanceof Node
+        && !panelRef.current?.contains(event.target)
+        && !ownerRef?.current?.contains(event.target)
+      ) onClose();
     };
     document.addEventListener("pointerdown", closeWhenOutside);
     return () => document.removeEventListener("pointerdown", closeWhenOutside);
-  }, [onClose]);
+  }, [onClose, ownerRef]);
 
   const choose = (symbol: string) => {
     onSelect(symbol);
     onClose();
   };
 
-  return (
+  const picker = (
     <section ref={panelRef} className={`company-picker company-picker--${align}`} aria-label={label}>
       <div className="company-picker__search">
         <span aria-hidden="true">⌕</span>
@@ -102,4 +118,5 @@ export function CompanyPicker({
       <footer><span><kbd>↑</kbd><kbd>↓</kbd> Move</span><span><kbd>↵</kbd> Select</span><small>Local search</small></footer>
     </section>
   );
+  return useMobilePortal ? createPortal(picker, document.body) : picker;
 }

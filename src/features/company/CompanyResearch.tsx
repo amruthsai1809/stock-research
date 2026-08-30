@@ -6,7 +6,7 @@ import { formatCompactCurrency, formatPercent, percentChange } from "@/src/domai
 import { Change, MetricCard, ScoreDial, StockMark, Tag } from "@/src/components/ui";
 import { InteractivePriceChart } from "@/src/components/charts/InteractivePriceChart";
 import { FinancialAtlas } from "@/src/components/charts/FinancialAtlas";
-import { MarketSignals } from "@/src/components/charts/MarketSignals";
+import { MarketSignalPreview, MarketSignals } from "@/src/components/charts/MarketSignals";
 import type { ResearchSignal } from "@/src/modules/stock-intelligence/domain/types";
 
 type Props = {
@@ -48,7 +48,7 @@ export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatc
 
       <nav className="subnav" aria-label={`${stock.name} research sections`}>
         {(["overview", "financials", "ownership", "quality", "source"] as CompanyTab[]).map((item) => (
-          <button key={item} className={tab === item ? "is-active" : ""} onClick={() => setTab(item)}>{item === "source" ? "Source lens" : item === "ownership" ? "Market signals" : item === "financials" ? "Financial charts" : item}</button>
+          <button key={item} className={tab === item ? "is-active" : ""} onClick={() => setTab(item)}>{item === "source" ? "Source lens" : item === "ownership" ? "Ownership & activity" : item === "financials" ? "Financial charts" : item}</button>
         ))}
       </nav>
 
@@ -62,6 +62,8 @@ export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatc
             <MetricCard label="Share count" value={formatPercent(stock.shareChange)} detail={stock.shareChange != null && stock.shareChange <= 0 ? "net reduction" : "year over year"} />
             <MetricCard label="Quality" value={`${stock.qualityScore}/100`} detail={stock.classification} accent="blue" />
           </section>
+
+          <MarketSignalPreview signal={researchSignal} onOpen={() => setTab("ownership")} />
 
           <div className="research-grid">
             <section className="panel chart-panel chart-panel--large">

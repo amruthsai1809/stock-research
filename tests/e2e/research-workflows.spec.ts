@@ -130,7 +130,7 @@ test("every primary research feature loads through the application shell", async
 test("options lab links contract, time, volatility, charts, and worker output", async ({ page }) => {
   await page.goto("/?view=options&symbol=TSLA");
   await expect(page.getByRole("heading", { name: /See what price and time actually do/i })).toBeVisible();
-  await expect(page.getByLabel("Underlying company")).toHaveValue("TSLA");
+  await expect(page.getByRole("button", { name: /Underlying company: TSLA/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: /This scenario (makes|loses) money/i })).toBeVisible();
   await expect(page.getByText("Ready", { exact: true })).toBeVisible();
   if (process.env.VISUAL_EVIDENCE === "1") await page.locator("main.content").screenshot({ path: "outputs/visual-qa/options-desktop.png" });
@@ -168,6 +168,56 @@ test("options lab links contract, time, volatility, charts, and worker output", 
     await page.waitForTimeout(500);
     await page.screenshot({ path: "outputs/visual-qa/options-mobile.png", fullPage: false });
   }
+});
+
+test("company research controls update every analysis surface without stale content", async ({ page }) => {
+  await page.goto("/?view=company&symbol=AAPL");
+  await expect(page.getByRole("heading", { name: /Apple/i }).first()).toBeVisible();
+  await page.getByRole("button", { name: "10Y", exact: true }).first().click();
+  await page.getByRole("button", { name: "Candles", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Candles", exact: true })).toHaveAttribute("aria-pressed", "true");
+  for (const control of ["200D", "Reset", "50D"] as const) await page.getByRole("button", { name: control, exact: true }).first().click();
+
+  await page.getByRole("button", { name: "Ownership & activity" }).click();
+  await expect(page.getByRole("heading", { name: "Insider transaction tape" })).toBeVisible();
+  for (const window of ["30D", "90D", "1Y"] as const) {
+    await page.getByRole("button", { name: window, exact: true }).click();
+    await expect(page.getByRole("button", { name: window, exact: true })).toHaveClass(/is-active/);
+  }
+  await expect(page.getByRole("heading", { name: "Short interest" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Institutional positioning" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Financial charts" }).click();
+  const metricButtons = page.locator(".atlas-metric-tabs button");
+  for (let index = 0; index < await metricButtons.count(); index += 1) {
+    const button = metricButtons.nth(index);
+    await button.click();
+    await expect(button).toHaveClass(/is-active/);
+  }
+  for (const mode of ["growth", "margin", "value"] as const) {
+    await page.getByRole("button", { name: mode, exact: true }).click();
+    await expect(page.getByRole("button", { name: mode, exact: true })).toHaveClass(/is-active/);
+  }
+
+  await page.getByRole("button", { name: "quality", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Business quality" })).toBeVisible();
+  await page.getByRole("button", { name: "Source lens" }).click();
+  const inspectButtons = page.getByRole("button", { name: /Inspect .* lineage/ });
+  for (let index = 0; index < await inspectButtons.count(); index += 1) {
+    const button = inspectButtons.nth(index);
+    await button.click();
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    await button.click();
+  }
+  await expectAccessible(page);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?view=company&symbol=AAPL");
+  await page.getByRole("button", { name: "Ownership & activity", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Insider transaction tape" })).toBeVisible();
+  const mobileWidth = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }));
+  expect(mobileWidth.document).toBeLessThanOrEqual(mobileWidth.viewport + 1);
+  if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/company-ownership-mobile.png", fullPage: false });
 });
 
 async function expectCompleteRange(locator: ReturnType<Page["locator"]>) {

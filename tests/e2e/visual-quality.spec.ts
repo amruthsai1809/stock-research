@@ -135,6 +135,65 @@ test("company picker stays anchored on desktop and becomes a bounded mobile shee
   }
 });
 
+test("all company selectors search partial names, update state, and remain bounded", async ({ page }) => {
+  await page.goto("/?view=valuation&symbol=AAPL");
+  await expect(page.getByRole("heading", { name: /Make expectations visible/i })).toBeVisible();
+  const valuationTrigger = page.getByRole("button", { name: /Valuing: AAPL/ });
+  await valuationTrigger.click();
+  await page.getByRole("combobox", { name: "Find a company for valuing" }).fill("duol");
+  await page.getByRole("option", { name: /DUOL Duolingo/i }).click();
+  await expect(page.getByRole("button", { name: /Valuing: DUOL Duolingo/i })).toBeVisible();
+  await expect(page.getByText("Latest price", { exact: true }).locator("..")).not.toContainText("$308.91");
+
+  await page.goto("/?view=options&symbol=AAPL");
+  const optionTrigger = page.getByRole("button", { name: /Underlying company: AAPL/ });
+  await optionTrigger.click();
+  await page.getByRole("combobox", { name: "Find a company for underlying company" }).fill("spotify");
+  await page.getByRole("option", { name: /SPOT Spotify/i }).click();
+  await expect(page.getByRole("button", { name: /Underlying company: SPOT Spotify/i })).toBeVisible();
+
+  await page.goto("/?view=portfolio");
+  await page.getByRole("button", { name: "Benchmark: SPY" }).click();
+  await page.getByRole("combobox", { name: "Search stock or ETF benchmark" }).fill("micro");
+  await page.getByRole("option", { name: /MSFT Microsoft/i }).click();
+  await expect(page.getByRole("button", { name: "Benchmark: MSFT" })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?view=valuation&symbol=DUOL");
+  const mobileTrigger = page.getByRole("button", { name: /Valuing: DUOL Duolingo/i });
+  await expect(mobileTrigger).toBeVisible();
+  await mobileTrigger.click();
+  const pickerBox = await page.locator(".company-picker").boundingBox();
+  expect(pickerBox).not.toBeNull();
+  expect(pickerBox!.x).toBeGreaterThanOrEqual(0);
+  expect(pickerBox!.x + pickerBox!.width).toBeLessThanOrEqual(390);
+  expect(pickerBox!.y).toBeGreaterThanOrEqual(0);
+  expect(pickerBox!.y + pickerBox!.height).toBeLessThanOrEqual(844);
+  await expectNoDocumentOverflow(page);
+  if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/valuation-picker-mobile.png", fullPage: false });
+
+  await page.getByRole("button", { name: "Close company picker" }).click();
+  await page.goto("/?view=options&symbol=SPOT");
+  await page.getByRole("button", { name: /Underlying company: SPOT Spotify/i }).click();
+  await expectMobilePickerBounds(page);
+
+  await page.getByRole("button", { name: "Close company picker" }).click();
+  await page.goto("/?view=portfolio");
+  await page.getByRole("button", { name: "Benchmark: SPY" }).click();
+  await expectMobilePickerBounds(page);
+  if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/portfolio-picker-mobile.png", fullPage: false });
+});
+
+async function expectMobilePickerBounds(page: Page) {
+  const box = await page.locator(".company-picker").boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+  await expectNoDocumentOverflow(page);
+}
+
 async function expectNoDocumentOverflow(page: Page) {
   const dimensions = await page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);

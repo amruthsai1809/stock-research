@@ -1,27 +1,34 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { writeJsonAtomic } from "./lib/atomicOutput.mjs";
 import process from "node:process";
+import { strFromU8, unzipSync } from "fflate";
+import { createStagedDirectory, replaceDirectory, writeJsonAtomic } from "./lib/atomicOutput.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const MARKET_PATH = path.join(ROOT, "public", "data", "market-data.json");
-const INSTITUTIONAL_INDEX_PATH = path.join(ROOT, "public", "data", "institutional", "index.json");
+const MARKET_INDEX_PATH = path.join(ROOT, "public", "data", "market", "index.json");
+const LEGACY_MARKET_PATH = path.join(ROOT, "public", "data", "market-data.json");
+const INSTITUTIONAL_DIR = path.join(ROOT, "public", "data", "institutional");
 const OUTPUT_PATH = path.join(ROOT, "public", "data", "research-signals.json");
-// A quarter-end wave of equity awards can push discretionary trades outside the
-// first few filings. Forty recent ownership filings provides a useful rolling
-// window while keeping the scheduled refresh comfortably below SEC rate limits.
-const MAX_FILINGS_PER_COMPANY = 40;
+const DETAIL_DIR = path.join(ROOT, "public", "data", "signals");
+const DEPLOYED_BASE_URL = (process.env.SIGNAL_BASE_URL ?? process.env.MARKET_BASE_URL ?? "https://el.amruthg.com").replace(/\/$/, "");
+const SHORT_SOURCE_PAGE = "https://www.finra.org/finra-data/browse-catalog/equity-short-interest/files";
+const INSIDER_SOURCE_PAGE = "https://www.sec.gov/data-research/sec-markets-data/insider-transactions-data-sets";
+const INSTITUTIONAL_SOURCE_PAGE = "https://www.sec.gov/data-research/sec-markets-data/form-13f-data-sets";
 const SEC_HEADERS = {
   "User-Agent": `Equity Lab ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
-  Accept: "application/json,application/xml,text/xml",
+  Accept: "application/json,application/xml,text/xml,text/plain,*/*",
 };
-const YAHOO_USER_AGENT = "Mozilla/5.0 Equity Lab data refresh";
+const MAX_INSIDER_AGE_DAYS = 366;
+const MAX_INSIDER_TRANSACTIONS = 120;
+const SIGNAL_LIMIT = Math.max(0, Number(process.env.SIGNAL_LIMIT ?? 0));
+const SIGNAL_SYMBOLS = new Set((process.env.SIGNAL_SYMBOLS ?? "").split(",").map((symbol) => symbol.trim().toUpperCase()).filter(Boolean));
 
 let secGate = Promise.resolve();
 let lastSecRequest = 0;
+
 async function enterSecQueue() {
   const turn = secGate.then(async () => {
-    const delay = Math.max(0, 140 - (Date.now() - lastSecRequest));
+    const delay = Math.max(0, 135 - (Date.now() - lastSecRequest));
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
     lastSecRequest = Date.now();
   });
@@ -29,170 +36,191 @@ async function enterSecQueue() {
   await turn;
 }
 
-async function fetchSec(url) {
+async function fetchOk(url, init = {}) {
+  const isSec = new URL(url).hostname.endsWith("sec.gov");
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    await enterSecQueue();
-    const response = await fetch(url, { headers: SEC_HEADERS });
+    if (isSec) await enterSecQueue();
+    const response = await fetch(url, { ...init, headers: { ...(isSec ? SEC_HEADERS : {}), ...(init.headers ?? {}) } });
     if (response.ok) return response;
     if (![403, 429, 500, 502, 503].includes(response.status) || attempt === 3) throw new Error(`${response.status} ${response.statusText}: ${url}`);
-    await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+    await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
   }
   throw new Error(`Request failed: ${url}`);
 }
 
-async function createYahooSession() {
-  const seed = await fetch("https://fc.yahoo.com/", { headers: { "User-Agent": YAHOO_USER_AGENT }, redirect: "manual" });
-  const setCookies = typeof seed.headers.getSetCookie === "function"
-    ? seed.headers.getSetCookie()
-    : [seed.headers.get("set-cookie")].filter(Boolean);
-  const cookie = setCookies.map((value) => value.split(";", 1)[0]).join("; ");
-  if (!cookie) throw new Error("Yahoo session cookie was unavailable.");
-  const crumbResponse = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
-    headers: { "User-Agent": YAHOO_USER_AGENT, Cookie: cookie },
-  });
-  if (!crumbResponse.ok) throw new Error(`Yahoo crumb returned ${crumbResponse.status}.`);
-  const crumb = (await crumbResponse.text()).trim();
-  if (!crumb) throw new Error("Yahoo crumb was empty.");
-  return { cookie, crumb };
+async function readJsonIfPresent(file) {
+  try { return JSON.parse(await readFile(file, "utf8")); }
+  catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
-const raw = (value) => value && typeof value.raw === "number" && Number.isFinite(value.raw) ? value.raw : null;
-const positiveNumber = (value) => typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
-const dateFromEpoch = (value) => value == null ? null : new Date(value * 1000).toISOString().slice(0, 10);
-
-async function loadMarketSignals(symbol, session, fallbackAsOf) {
-  const modules = "defaultKeyStatistics,financialData,recommendationTrend,upgradeDowngradeHistory";
-  const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}&crumb=${encodeURIComponent(session.crumb)}`;
-  const response = await fetch(url, { headers: { "User-Agent": YAHOO_USER_AGENT, Cookie: session.cookie } });
-  if (!response.ok) throw new Error(`Yahoo quote summary returned ${response.status}.`);
-  const summary = (await response.json())?.quoteSummary?.result?.[0];
-  if (!summary) throw new Error("Yahoo quote summary was empty.");
-  const financial = summary.financialData ?? {};
-  const statistics = summary.defaultKeyStatistics ?? {};
-  const currentPrice = raw(financial.currentPrice);
-  const targetMean = raw(financial.targetMeanPrice);
-  const history = (summary.upgradeDowngradeHistory?.history ?? []).slice(0, 30).flatMap((item) => {
-    const date = dateFromEpoch(item.epochGradeDate);
-    if (!date) return [];
-    return [{
-      date,
-      firm: String(item.firm ?? "Unknown firm"),
-      action: String(item.action ?? "").toLowerCase(),
-      fromGrade: String(item.fromGrade ?? ""),
-      toGrade: String(item.toGrade ?? ""),
-      priceTargetAction: String(item.priceTargetAction ?? ""),
-      priorPriceTarget: positiveNumber(item.priorPriceTarget),
-      currentPriceTarget: positiveNumber(item.currentPriceTarget),
-    }];
-  });
-  const trend = (summary.recommendationTrend?.trend ?? []).slice(0, 4).map((item) => ({
-    period: String(item.period ?? ""),
-    strongBuy: Number(item.strongBuy ?? 0),
-    buy: Number(item.buy ?? 0),
-    hold: Number(item.hold ?? 0),
-    sell: Number(item.sell ?? 0),
-    strongSell: Number(item.strongSell ?? 0),
-  }));
-  const recommendationMean = raw(financial.recommendationMean);
-  const analystAvailable = recommendationMean != null || targetMean != null || trend.some((item) => item.strongBuy + item.buy + item.hold + item.sell + item.strongSell > 0);
-  return {
-    analyst: {
-      available: analystAvailable,
-      reason: analystAvailable ? null : "Analyst consensus was not available from the public market snapshot.",
-      asOf: history[0]?.date ?? fallbackAsOf,
-      recommendationKey: typeof financial.recommendationKey === "string" ? financial.recommendationKey : null,
-      recommendationMean,
-      numberOfAnalysts: Math.max(0, Math.round(raw(financial.numberOfAnalystOpinions) ?? 0)),
-      targetLow: raw(financial.targetLowPrice),
-      targetMean,
-      targetMedian: raw(financial.targetMedianPrice),
-      targetHigh: raw(financial.targetHighPrice),
-      targetUpside: currentPrice != null && currentPrice > 0 && targetMean != null ? ((targetMean / currentPrice) - 1) * 100 : null,
-      trend,
-      actions: history,
-    },
-    shortInterest: {
-      available: raw(statistics.sharesShort) != null || raw(statistics.shortPercentOfFloat) != null,
-      asOf: dateFromEpoch(raw(statistics.dateShortInterest)),
-      sharesShort: raw(statistics.sharesShort),
-      sharesShortPriorMonth: raw(statistics.sharesShortPriorMonth),
-      shortPercentOfFloat: raw(statistics.shortPercentOfFloat),
-      sharesPercentOutstanding: raw(statistics.sharesPercentSharesOut),
-      daysToCover: raw(statistics.shortRatio),
-      institutionalOwnership: raw(statistics.heldPercentInstitutions),
-      insiderOwnership: raw(statistics.heldPercentInsiders),
-    },
-  };
+async function loadMarket() {
+  const localIndex = await readJsonIfPresent(MARKET_INDEX_PATH);
+  if (localIndex?.stocks?.length) return localIndex;
+  try {
+    const deployed = await (await fetchOk(`${DEPLOYED_BASE_URL}/data/market/index.json`)).json();
+    if (deployed?.stocks?.length) return deployed;
+  } catch (error) {
+    process.stderr.write(`[signals] deployed market index unavailable: ${error.message}\n`);
+  }
+  const legacy = await readJsonIfPresent(LEGACY_MARKET_PATH);
+  if (!legacy?.stocks?.length) throw new Error("No market universe is available.");
+  return legacy;
 }
 
-function unavailableMarketSignals(reason) {
-  return {
-    analyst: {
-      available: false,
-      reason,
-      asOf: null,
-      recommendationKey: null,
-      recommendationMean: null,
-      numberOfAnalysts: 0,
-      targetLow: null,
-      targetMean: null,
-      targetMedian: null,
-      targetHigh: null,
-      targetUpside: null,
-      trend: [],
-      actions: [],
-    },
-    shortInterest: {
-      available: false,
-      asOf: null,
-      sharesShort: null,
-      sharesShortPriorMonth: null,
-      shortPercentOfFloat: null,
-      sharesPercentOutstanding: null,
-      daysToCover: null,
-      institutionalOwnership: null,
-      insiderOwnership: null,
-    },
-  };
+async function loadBaseline() {
+  try {
+    const deployed = await (await fetchOk(`${DEPLOYED_BASE_URL}/data/research-signals.json`)).json();
+    if (deployed?.signals) return deployed;
+  } catch { /* The checked-in bootstrap remains a valid first-deploy fallback. */ }
+  const local = await readJsonIfPresent(OUTPUT_PATH);
+  return local?.signals ? local : { signals: {} };
+}
+
+function quarterCandidates(now = new Date()) {
+  const result = [];
+  let year = now.getUTCFullYear();
+  let quarter = Math.floor(now.getUTCMonth() / 3) + 1;
+  for (let index = 0; index < 8; index += 1) {
+    result.push({ year, quarter });
+    quarter -= 1;
+    if (quarter === 0) { quarter = 4; year -= 1; }
+  }
+  return result;
+}
+
+function tsvRows(text) {
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const headers = lines.shift()?.split("\t") ?? [];
+  return lines.filter(Boolean).map((line) => {
+    const values = line.split("\t");
+    return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
+  });
+}
+
+function zipText(zip, suffix) {
+  const key = Object.keys(zip).find((name) => name.toUpperCase().endsWith(suffix.toUpperCase()));
+  if (!key) throw new Error(`${suffix} is missing from SEC insider data set.`);
+  return strFromU8(zip[key]);
+}
+
+function normalizeSecDate(value) {
+  const text = String(value ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const match = text.match(/^(\d{1,2})-([A-Z]{3})-(\d{4})$/i);
+  if (!match) return null;
+  const month = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].indexOf(match[2].toUpperCase()) + 1;
+  return month ? `${match[3]}-${String(month).padStart(2, "0")}-${match[1].padStart(2, "0")}` : null;
+}
+
+function finite(value) {
+  if (value == null || String(value).trim() === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function roleForOwner(owner) {
+  return [owner?.RPTOWNER_RELATIONSHIP, owner?.RPTOWNER_TITLE].filter(Boolean).join(" / ") || "Reporting owner";
+}
+
+function secAccessionUrl(cik, accession) {
+  return `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replaceAll("-", "")}/${accession}-index.html`;
+}
+
+async function loadBulkInsiders(stocks) {
+  const byCik = new Map(stocks.map((stock) => [String(Number(stock.cik)), stock.symbol]));
+  const result = new Map(stocks.map((stock) => [stock.symbol, []]));
+  let loaded = 0;
+  for (const { year, quarter } of quarterCandidates()) {
+    if (loaded >= 4) break;
+    let zip;
+    let unavailableReason = "not published";
+    const locations = [
+      `https://www.sec.gov/files/datastandardsinnovation/data/insider-transactions-data-sets/${year}q${quarter}_form345.zip`,
+      `https://www.sec.gov/files/structureddata/data/insider-transactions-data-sets/${year}q${quarter}_form345.zip`,
+    ];
+    for (const url of locations) {
+      try {
+        const response = await fetchOk(url);
+        zip = unzipSync(new Uint8Array(await response.arrayBuffer()));
+        break;
+      } catch (error) { unavailableReason = error.message.split(":")[0]; }
+    }
+    if (!zip) {
+      process.stdout.write(`[signals] SEC ${year} Q${quarter} insider bulk unavailable (${unavailableReason})\n`);
+      continue;
+    }
+    loaded += 1;
+    const submissions = new Map();
+    for (const row of tsvRows(zipText(zip, "SUBMISSION.tsv"))) {
+      const symbol = byCik.get(String(Number(row.ISSUERCIK)));
+      if (symbol && /^4(?:\/A)?$/i.test(row.DOCUMENT_TYPE)) submissions.set(row.ACCESSION_NUMBER, { ...row, symbol });
+    }
+    const owners = new Map();
+    for (const row of tsvRows(zipText(zip, "REPORTINGOWNER.tsv"))) {
+      if (submissions.has(row.ACCESSION_NUMBER) && !owners.has(row.ACCESSION_NUMBER)) owners.set(row.ACCESSION_NUMBER, row);
+    }
+    for (const row of tsvRows(zipText(zip, "NONDERIV_TRANS.tsv"))) {
+      const submission = submissions.get(row.ACCESSION_NUMBER);
+      if (!submission || !["P", "S"].includes(row.TRANS_CODE)) continue;
+      const shares = Math.max(0, finite(row.TRANS_SHARES) ?? 0);
+      const price = finite(row.TRANS_PRICEPERSHARE);
+      const transactionDate = normalizeSecDate(row.TRANS_DATE) ?? normalizeSecDate(submission.PERIOD_OF_REPORT) ?? normalizeSecDate(submission.FILING_DATE);
+      const filingDate = normalizeSecDate(submission.FILING_DATE);
+      if (!transactionDate || !filingDate) continue;
+      const owner = owners.get(row.ACCESSION_NUMBER);
+      result.get(submission.symbol).push({
+        accession: row.ACCESSION_NUMBER,
+        ownerName: owner?.RPTOWNERNAME || "Undisclosed reporting owner",
+        ownerRole: roleForOwner(owner),
+        transactionDate,
+        filingDate,
+        code: row.TRANS_CODE,
+        action: row.TRANS_CODE === "P" ? "purchase" : "sale",
+        shares,
+        price,
+        value: price == null ? null : shares * price,
+        sharesOwnedAfter: finite(row.SHRS_OWND_FOLWNG_TRANS),
+        rule10b51: /^(?:1|true)$/i.test(submission.AFF10B5ONE),
+        sourceUrl: secAccessionUrl(submission.ISSUERCIK, row.ACCESSION_NUMBER),
+      });
+    }
+    process.stdout.write(`[signals] loaded official SEC insider bulk ${year} Q${quarter}\n`);
+  }
+  if (loaded < 2) throw new Error(`Only ${loaded} SEC insider bulk quarters were available.`);
+  return result;
 }
 
 const clean = (value = "") => decodeEntities(String(value).replace(/<!\[CDATA\[|\]\]>/g, "")).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const decodeEntities = (value) => value.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 const rawTag = (xml, name) => xml.match(new RegExp(`<(?:\\w+:)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:\\w+:)?${name}>`, "i"))?.[1] ?? "";
 const tag = (xml, name) => clean(rawTag(xml, name));
-const numericTag = (xml, name) => {
-  const value = Number(tag(xml, name));
-  return Number.isFinite(value) ? value : null;
-};
+const numericTag = (xml, name) => finite(tag(xml, name));
+const blocks = (xml, name) => [...xml.matchAll(new RegExp(`<(?:\\w+:)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:\\w+:)?${name}>`, "gi"))].map((match) => match[1]);
 
-function blocks(xml, name) {
-  return [...xml.matchAll(new RegExp(`<(?:\\w+:)?${name}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:\\w+:)?${name}>`, "gi"))].map((match) => match[1]);
-}
-
-function ownerRole(xml) {
+function ownershipRole(xml) {
   const relationship = rawTag(xml, "reportingOwnerRelationship");
   const roles = [];
   if (/true|1/i.test(tag(relationship, "isDirector"))) roles.push("Director");
   if (/true|1/i.test(tag(relationship, "isOfficer"))) roles.push(tag(relationship, "officerTitle") || "Officer");
   if (/true|1/i.test(tag(relationship, "isTenPercentOwner"))) roles.push("10% owner");
-  if (/true|1/i.test(tag(relationship, "isOther"))) roles.push(tag(relationship, "otherText") || "Other insider");
-  return roles.join(" · ") || "Reporting owner";
+  return roles.join(" / ") || "Reporting owner";
 }
 
 function parseOwnershipXml(xml, filing) {
   const owner = clean(tag(xml, "rptOwnerName")) || "Undisclosed reporting owner";
-  const role = ownerRole(xml);
+  const role = ownershipRole(xml);
   const rule10b51 = /10b5-?1/i.test(xml);
-  const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${filing.accession.replace(/-/g, "")}/${path.posix.basename(filing.primaryDocument)}`;
+  const sourceUrl = `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${filing.accession.replaceAll("-", "")}/${path.posix.basename(filing.primaryDocument)}`;
   return blocks(xml, "nonDerivativeTransaction").flatMap((transaction) => {
     const code = tag(rawTag(transaction, "transactionCoding"), "transactionCode").toUpperCase();
-    if (code !== "P" && code !== "S") return [];
+    if (!["P", "S"].includes(code)) return [];
     const amounts = rawTag(transaction, "transactionAmounts");
     const post = rawTag(transaction, "postTransactionAmounts");
-    const shares = numericTag(rawTag(amounts, "transactionShares"), "value") ?? 0;
+    const shares = Math.max(0, numericTag(rawTag(amounts, "transactionShares"), "value") ?? 0);
     const price = numericTag(rawTag(amounts, "transactionPricePerShare"), "value");
-    const acquiredDisposed = tag(rawTag(amounts, "transactionAcquiredDisposedCode"), "value").toUpperCase();
-    const signedAction = code === "P" || acquiredDisposed === "A" ? "purchase" : "sale";
     return [{
       accession: filing.accession,
       ownerName: owner,
@@ -200,7 +228,7 @@ function parseOwnershipXml(xml, filing) {
       transactionDate: tag(rawTag(transaction, "transactionDate"), "value") || filing.filingDate,
       filingDate: filing.filingDate,
       code,
-      action: signedAction,
+      action: code === "P" ? "purchase" : "sale",
       shares,
       price,
       value: price == null ? null : shares * price,
@@ -211,29 +239,102 @@ function parseOwnershipXml(xml, filing) {
   });
 }
 
-async function loadInsiderTransactions(stock) {
-  const submissions = await (await fetchSec(`https://data.sec.gov/submissions/CIK${stock.cik}.json`)).json();
-  const recent = submissions.filings?.recent ?? {};
-  const filings = (recent.form ?? []).map((form, index) => ({
-    form,
-    accession: recent.accessionNumber[index],
-    filingDate: recent.filingDate[index],
-    primaryDocument: recent.primaryDocument[index],
-    cikNumber: String(Number(stock.cik)),
-  })).filter((filing) => /^4(?:\/A)?$/i.test(filing.form) && filing.accession && filing.primaryDocument).slice(0, MAX_FILINGS_PER_COMPANY);
-  const transactions = [];
-  for (const filing of filings) {
-    try {
-      const url = `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${filing.accession.replace(/-/g, "")}/${path.posix.basename(filing.primaryDocument)}`;
-      const xml = await (await fetchSec(url)).text();
-      transactions.push(...parseOwnershipXml(xml, filing));
-    } catch (error) {
-      console.warn(`[signals] ${stock.symbol}: skipped ${filing.accession}: ${error.message}`);
+async function loadCurrentQuarterInsiders(stocks, quarterStart) {
+  const result = new Map(stocks.map((stock) => [stock.symbol, []]));
+  if (process.env.SIGNAL_SKIP_LIVE_INSIDERS === "1") return result;
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(6, stocks.length) }, async () => {
+    while (cursor < stocks.length) {
+      const stock = stocks[cursor++];
+      try {
+        const submissions = await (await fetchOk(`https://data.sec.gov/submissions/CIK${stock.cik}.json`)).json();
+        const recent = submissions.filings?.recent ?? {};
+        const filings = (recent.form ?? []).map((form, index) => ({ form, accession: recent.accessionNumber[index], filingDate: recent.filingDate[index], primaryDocument: recent.primaryDocument[index], cikNumber: String(Number(stock.cik)) }))
+          .filter((filing) => /^4(?:\/A)?$/i.test(filing.form) && filing.filingDate >= quarterStart && filing.accession && filing.primaryDocument);
+        for (const filing of filings) {
+          try {
+            const url = `https://www.sec.gov/Archives/edgar/data/${filing.cikNumber}/${filing.accession.replaceAll("-", "")}/${path.posix.basename(filing.primaryDocument)}`;
+            result.get(stock.symbol).push(...parseOwnershipXml(await (await fetchOk(url)).text(), filing));
+          } catch (error) {
+            process.stderr.write(`[signals] ${stock.symbol} skipped ${filing.accession}: ${error.message}\n`);
+          }
+        }
+      } catch (error) {
+        process.stderr.write(`[signals] ${stock.symbol} live insider delta unavailable: ${error.message}\n`);
+      }
+      if (cursor % 100 === 0 || cursor === stocks.length) process.stdout.write(`[signals] SEC live insider scan ${Math.min(cursor, stocks.length)}/${stocks.length}\n`);
     }
-  }
+  });
+  await Promise.all(workers);
+  return result;
+}
+
+function dedupeInsiders(rows, cutoff) {
   const unique = new Map();
-  for (const transaction of transactions) unique.set(`${transaction.accession}-${transaction.ownerName}-${transaction.transactionDate}-${transaction.code}-${transaction.shares}`, transaction);
+  for (const row of rows) {
+    if (row.transactionDate < cutoff) continue;
+    const key = [row.accession, row.ownerName, row.transactionDate, row.code, row.shares, row.price].join("|");
+    unique.set(key, row);
+  }
   return [...unique.values()].sort((a, b) => b.transactionDate.localeCompare(a.transactionDate) || b.filingDate.localeCompare(a.filingDate));
+}
+
+function summarizeInsiders(transactions) {
+  const purchases = transactions.filter((item) => item.action === "purchase");
+  const sales = transactions.filter((item) => item.action === "sale");
+  return {
+    purchaseCount: purchases.length,
+    saleCount: sales.length,
+    purchaseValue: purchases.reduce((sum, item) => sum + (item.value ?? 0), 0),
+    saleValue: sales.reduce((sum, item) => sum + (item.value ?? 0), 0),
+    discretionarySaleCount: sales.filter((item) => !item.rule10b51).length,
+  };
+}
+
+function parseFinraDate(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.length === 8 ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}` : null;
+}
+
+async function loadFinraShortInterest() {
+  const html = await (await fetchOk(SHORT_SOURCE_PAGE)).text();
+  const links = [...new Set(html.match(/https:\/\/cdn\.finra\.org\/equity\/otcmarket\/biweekly\/shrt\d{8}\.csv/gi) ?? [])].sort().reverse().slice(0, 2);
+  if (!links.length) throw new Error("FINRA did not publish a short-interest file link.");
+  const snapshots = [];
+  for (const url of links) {
+    const rows = tsvRows((await (await fetchOk(url)).text()).replaceAll("|", "\t"));
+    snapshots.push({ url, bySymbol: new Map(rows.map((row) => [row.symbolCode?.trim().toUpperCase(), row])) });
+  }
+  return snapshots;
+}
+
+function shortSignal(stock, snapshots, baseline) {
+  const currentRow = snapshots[0]?.bySymbol.get(stock.symbol);
+  const priorRow = snapshots[1]?.bySymbol.get(stock.symbol);
+  const sharesShort = finite(currentRow?.currentShortPositionQuantity);
+  const priorShares = finite(priorRow?.currentShortPositionQuantity) ?? finite(currentRow?.previousShortPositionQuantity);
+  const sharesOutstanding = stock.marketCap > 0 && stock.latestPrice > 0 ? stock.marketCap / stock.latestPrice : null;
+  const asOf = parseFinraDate(currentRow?.settlementDate) ?? parseFinraDate(snapshots[0]?.url.match(/shrt(\d{8})/i)?.[1]);
+  const history = snapshots.flatMap((snapshot) => {
+    const row = snapshot.bySymbol.get(stock.symbol);
+    const pointShares = finite(row?.currentShortPositionQuantity);
+    const pointDate = parseFinraDate(row?.settlementDate) ?? parseFinraDate(snapshot.url.match(/shrt(\d{8})/i)?.[1]);
+    if (pointShares == null || !pointDate) return [];
+    return [{ asOf: pointDate, sharesShort: pointShares, sharesShortPriorMonth: finite(row.previousShortPositionQuantity), daysToCover: finite(row.daysToCoverQuantity), sharesPercentOutstanding: sharesOutstanding ? pointShares / sharesOutstanding : null }];
+  }).sort((a, b) => a.asOf.localeCompare(b.asOf));
+  return {
+    available: sharesShort != null,
+    asOf,
+    sharesShort,
+    sharesShortPriorMonth: priorShares,
+    shortPercentOfFloat: baseline?.shortPercentOfFloat ?? null,
+    sharesPercentOutstanding: sharesShort != null && sharesOutstanding ? sharesShort / sharesOutstanding : null,
+    daysToCover: finite(currentRow?.daysToCoverQuantity),
+    institutionalOwnership: baseline?.institutionalOwnership ?? null,
+    insiderOwnership: baseline?.insiderOwnership ?? null,
+    sourceUrl: snapshots[0]?.url ?? null,
+    history,
+  };
 }
 
 function holdingShares(quarter, symbol) {
@@ -241,63 +342,100 @@ function holdingShares(quarter, symbol) {
 }
 
 async function buildInstitutionalSignals(symbols) {
-  const index = JSON.parse(await readFile(INSTITUTIONAL_INDEX_PATH, "utf8"));
-  const active = index.managers.filter((manager) => manager.lifecycle.status === "active");
-  const managers = await Promise.all(active.map(async (summary) => JSON.parse(await readFile(path.join(ROOT, "public", "data", "institutional", `${summary.id}.json`), "utf8"))));
-  const reportDate = managers.map((manager) => manager.quarters[0]?.reportDate ?? "").sort().at(-1) || null;
-  const filingDate = managers.map((manager) => manager.quarters[0]?.filedDate ?? "").sort().at(-1) || null;
+  const index = await readJsonIfPresent(path.join(INSTITUTIONAL_DIR, "index.json"));
+  if (!index?.managers?.length) return Object.fromEntries(symbols.map((symbol) => [symbol, emptyInstitutional()]));
+  const tracked = index.managers.filter((manager) => manager.lifecycle?.status !== "archived");
+  const managers = (await Promise.all(tracked.map((summary) => readJsonIfPresent(path.join(INSTITUTIONAL_DIR, `${summary.id}.json`))))).filter(Boolean);
+  const reportDate = managers.flatMap((manager) => manager.quarters?.[0]?.reportDate ?? []).sort().at(-1) ?? null;
+  const reported = reportDate ? managers.filter((manager) => manager.quarters?.some((quarter) => quarter.reportDate === reportDate)) : [];
+  const filingDate = reported.flatMap((manager) => manager.quarters.find((quarter) => quarter.reportDate === reportDate)?.filedDate ?? []).sort().at(-1) ?? null;
   return Object.fromEntries(symbols.map((symbol) => {
-    let managersHolding = 0;
-    let managersIncreased = 0;
-    let managersReduced = 0;
-    let managersNew = 0;
-    let managersExited = 0;
-    for (const manager of managers) {
-      const current = holdingShares(manager.quarters[0], symbol);
-      const previous = holdingShares(manager.quarters[1], symbol);
-      if (current > 0) managersHolding += 1;
-      if (current > 0 && previous === 0) managersNew += 1;
-      else if (current > previous * 1.001) managersIncreased += 1;
-      else if (current > 0 && current < previous * 0.999) managersReduced += 1;
-      else if (current === 0 && previous > 0) managersExited += 1;
+    const item = { ...emptyInstitutional(), reportDate, filingDate, expectedManagers: managers.length, managersReported: reported.length };
+    for (const manager of reported) {
+      const currentIndex = manager.quarters.findIndex((quarter) => quarter.reportDate === reportDate);
+      const current = holdingShares(manager.quarters[currentIndex], symbol);
+      const previous = holdingShares(manager.quarters.slice(currentIndex + 1).find((quarter) => quarter.reportDate < reportDate), symbol);
+      if (current > 0) item.managersHolding += 1;
+      if (current > 0 && previous === 0) item.managersNew += 1;
+      else if (current > previous * 1.001) item.managersIncreased += 1;
+      else if (current > 0 && current < previous * 0.999) item.managersReduced += 1;
+      else if (current === 0 && previous > 0) item.managersExited += 1;
     }
-    return [symbol, { reportDate, filingDate, managersHolding, managersIncreased, managersReduced, managersNew, managersExited }];
+    return [symbol, item];
   }));
 }
 
+function emptyInstitutional() {
+  return { reportDate: null, filingDate: null, expectedManagers: 0, managersReported: 0, managersHolding: 0, managersIncreased: 0, managersReduced: 0, managersNew: 0, managersExited: 0 };
+}
+
+function emptyAnalyst(reason = "Analyst consensus was not collected for this company in the official-source refresh.") {
+  return { available: false, reason, asOf: null, recommendationKey: null, recommendationMean: null, numberOfAnalysts: 0, targetLow: null, targetMean: null, targetMedian: null, targetHigh: null, targetUpside: null, trend: [], actions: [] };
+}
+
+function compactSignal(signal) {
+  return { ...signal, insider: { ...signal.insider, transactions: signal.insider.transactions.slice(0, 3) }, analyst: { ...signal.analyst, trend: signal.analyst.trend.slice(0, 1), actions: [] }, shortInterest: { ...signal.shortInterest, history: [] } };
+}
+
 async function main() {
-  const market = JSON.parse(await readFile(MARKET_PATH, "utf8"));
-  const symbols = market.stocks.map((stock) => stock.symbol);
-  const institutional = await buildInstitutionalSignals(symbols);
-  let yahooSession = null;
-  try { yahooSession = await createYahooSession(); }
-  catch (error) { console.warn(`[signals] analyst and short-interest source unavailable: ${error.message}`); }
-  const signals = {};
-  for (const [index, stock] of market.stocks.entries()) {
-    process.stdout.write(`[signals] ${String(index + 1).padStart(2, "0")}/${market.stocks.length} ${stock.symbol}\n`);
-    let transactions = [];
-    try { transactions = await loadInsiderTransactions(stock); }
-    catch (error) { console.warn(`[signals] ${stock.symbol}: insider source unavailable: ${error.message}`); }
-    let marketSignals = unavailableMarketSignals("Analyst consensus was unavailable during the latest static refresh.");
-    if (yahooSession) {
-      try { marketSignals = await loadMarketSignals(stock.symbol, yahooSession, market.priceAsOf); }
-      catch (error) { console.warn(`[signals] ${stock.symbol}: analyst/short source unavailable: ${error.message}`); }
-    }
-    signals[stock.symbol] = {
+  const generatedAt = new Date().toISOString();
+  const market = await loadMarket();
+  const allStocks = market.stocks;
+  const selectedStocks = SIGNAL_SYMBOLS.size ? allStocks.filter((stock) => SIGNAL_SYMBOLS.has(stock.symbol)) : allStocks;
+  const stocks = SIGNAL_LIMIT ? selectedStocks.slice(0, SIGNAL_LIMIT) : selectedStocks;
+  const baseline = await loadBaseline();
+  process.stdout.write(`[signals] building ${stocks.length}/${allStocks.length} company signals\n`);
+
+  const institutional = await buildInstitutionalSignals(stocks.map((stock) => stock.symbol));
+  const bulkInsiders = await loadBulkInsiders(stocks);
+  const now = new Date(generatedAt);
+  const quarterStart = new Date(Date.UTC(now.getUTCFullYear(), Math.floor(now.getUTCMonth() / 3) * 3, 1)).toISOString().slice(0, 10);
+  const liveInsiders = await loadCurrentQuarterInsiders(stocks, quarterStart);
+  const finra = await loadFinraShortInterest();
+  const cutoff = new Date(now.getTime() - MAX_INSIDER_AGE_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const details = {};
+
+  for (const stock of stocks) {
+    const previous = baseline.signals?.[stock.symbol];
+    const transactions = dedupeInsiders([...(bulkInsiders.get(stock.symbol) ?? []), ...(liveInsiders.get(stock.symbol) ?? []), ...(previous?.insider?.transactions ?? [])], cutoff);
+    details[stock.symbol] = {
       symbol: stock.symbol,
-      insider: { asOf: transactions[0]?.filingDate ?? market.priceAsOf, transactions },
-      institutional: institutional[stock.symbol],
-      ...marketSignals,
+      insider: {
+        asOf: transactions[0]?.filingDate ?? generatedAt.slice(0, 10),
+        summary: summarizeInsiders(transactions),
+        transactions: transactions.slice(0, MAX_INSIDER_TRANSACTIONS),
+      },
+      institutional: institutional[stock.symbol] ?? emptyInstitutional(),
+      analyst: previous?.analyst ?? emptyAnalyst(),
+      shortInterest: shortSignal(stock, finra, previous?.shortInterest),
     };
   }
+
   const output = {
-    generatedAt: new Date().toISOString(),
-    methodology: "Fundamental and market factors are computed locally. Corporate-insider activity includes recent SEC Forms 4/4-A open-market codes P and S. Institutional breadth uses only active managers in the latest two loaded 13F periods; archived managers are excluded. Analyst consensus and short interest are delayed market snapshots and are dated separately.",
-    sources: { insiders: "https://www.sec.gov/edgar/sec-api-documentation", institutions: "https://www.sec.gov/divisions/investment/13ffaq", analysts: "https://finance.yahoo.com/" },
-    signals,
+    schemaVersion: 2,
+    generatedAt,
+    methodology: "Signals are computed locally from official SEC insider, SEC 13F, and FINRA short-interest disclosures. Insider activity includes direct open-market transaction codes P and S from a rolling one-year window. Institutional breadth compares one report period across tracked managers and exposes reporting progress. Short interest is the latest periodic FINRA publication, not a live estimate. Analyst data is supplemental and may be unavailable.",
+    sources: { insiders: INSIDER_SOURCE_PAGE, institutions: INSTITUTIONAL_SOURCE_PAGE, analysts: "https://finance.yahoo.com/", shortInterest: SHORT_SOURCE_PAGE },
+    coverage: {
+      universe: stocks.length,
+      insiders: Object.values(details).filter((signal) => signal.insider.transactions.length).length,
+      shortInterest: Object.values(details).filter((signal) => signal.shortInterest.available).length,
+      institutions: Object.values(details).filter((signal) => signal.institutional.managersHolding > 0).length,
+    },
+    signals: Object.fromEntries(Object.entries(details).map(([symbol, signal]) => [symbol, compactSignal(signal)])),
   };
-  await writeJsonAtomic(OUTPUT_PATH, output, { pretty: true });
-  console.log(`[signals] wrote ${OUTPUT_PATH}`);
+
+  if (!SIGNAL_LIMIT && !SIGNAL_SYMBOLS.size && Object.keys(output.signals).length !== allStocks.length) throw new Error("Signal output does not cover the complete market universe.");
+  const stagedDetails = await createStagedDirectory(DETAIL_DIR);
+  try {
+    await Promise.all(Object.entries(details).map(([symbol, signal]) => writeFile(path.join(stagedDetails, `${symbol.toLowerCase().replaceAll(".", "-")}.json`), `${JSON.stringify(signal)}\n`, "utf8")));
+    await replaceDirectory(stagedDetails, DETAIL_DIR);
+  } catch (error) {
+    await rm(stagedDetails, { recursive: true, force: true });
+    throw error;
+  }
+  await writeJsonAtomic(OUTPUT_PATH, output);
+  process.stdout.write(`[signals] wrote ${stocks.length} summaries and symbol details (${output.coverage.shortInterest} short, ${output.coverage.insiders} insider, ${output.coverage.institutions} institutional)\n`);
 }
 
 await main();

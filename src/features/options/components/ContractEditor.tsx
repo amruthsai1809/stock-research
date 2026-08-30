@@ -1,6 +1,7 @@
 import type { StockSummary } from "@/src/domain/stock";
 import type { OptionKind } from "@/src/domain/options/types";
 import type { OptionsLabState } from "../useOptionsLab";
+import { CompanySelect } from "@/src/components/CompanySelect";
 import styles from "../OptionsLab.module.css";
 
 type Props = {
@@ -20,13 +21,16 @@ export function ContractEditor({ stocks, stock, state, onSelectSymbol, onKindCha
       <span className={styles.localBadge}>Runs locally</span>
     </header>
 
-    <label className={styles.companyField}>
-      <span>Underlying company</span>
-      <select aria-label="Underlying company" value={state.symbol} onChange={(event) => onSelectSymbol(event.target.value)}>
-        {stocks.map((item) => <option key={item.symbol} value={item.symbol}>{item.symbol} — {item.name}</option>)}
-      </select>
-      <small>{stock.exchange} · End-of-day price ${stock.latestPrice.toFixed(2)} as of {stock.priceAsOf}</small>
-    </label>
+    <div className={styles.companyField}>
+      <CompanySelect
+        stocks={stocks}
+        value={state.symbol}
+        label="Underlying company"
+        detail={`${stock.exchange} · $${stock.latestPrice.toFixed(2)} EOD · ${stock.priceAsOf}`}
+        onChange={onSelectSymbol}
+        showMark
+      />
+    </div>
 
     <fieldset className={styles.segmentField}>
       <legend>Option type</legend>

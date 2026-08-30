@@ -7,7 +7,7 @@ import { searchCompanies } from "@/src/domain/companySearch";
 import { StockMark, Tag } from "@/src/components/ui";
 import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
 import { navigation, readSymbol, readView, writeView, type AppView } from "@/src/features/shell/navigation";
-import { useStockDetail } from "@/src/features/market/useStockDetails";
+import { useResearchSignal, useStockDetail } from "@/src/features/market/useStockDetails";
 import { product } from "@/src/config/product";
 
 const Discover = lazy(() => import("@/src/features/discover/Discover").then((module) => ({ default: module.Discover })));
@@ -36,6 +36,11 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
   const [theme, setTheme] = useState<"light" | "dark">(readTheme);
   const selectedStock = stocks.find((stock) => stock.symbol === selectedSymbol) ?? stocks[0];
   const selectedDetail = useStockDetail(services.marketRepository, view === "company" ? selectedStock?.symbol : undefined);
+  const selectedSignal = useResearchSignal(
+    services.researchSignalRepository,
+    view === "company" ? selectedStock?.symbol : undefined,
+    selectedStock ? researchSignals?.signals[selectedStock.symbol] : undefined,
+  );
 
   useEffect(() => {
     let active = true;
@@ -139,11 +144,11 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
       <main className="content"><Suspense fallback={<FeatureLoading />}>
         {view === "discover" && <Discover stocks={stocks} onSelect={selectStock} onOpenDipFinder={() => navigate("dips")} marketRepository={services.marketRepository} />}
         {view === "dips" && <DipFinder stocks={stocks} onSelect={selectStock} watchlist={watchlist} onToggleWatchlist={toggleWatchlist} marketRepository={services.marketRepository} />}
-        {view === "company" && selectedDetail.stock && <CompanyResearch stock={selectedDetail.stock} researchSignal={researchSignals?.signals[selectedDetail.stock.symbol]} isWatched={watchlist.includes(selectedDetail.stock.symbol)} onToggleWatchlist={toggleWatchlist} onOpenValuation={() => navigate("valuation")} />}
+        {view === "company" && selectedDetail.stock && <CompanyResearch stock={selectedDetail.stock} researchSignal={selectedSignal} isWatched={watchlist.includes(selectedDetail.stock.symbol)} onToggleWatchlist={toggleWatchlist} onOpenValuation={() => navigate("valuation")} />}
         {view === "company" && !selectedDetail.stock && <DetailLoading error={selectedDetail.error} />}
         {view === "screener" && <Screener stocks={stocks} onSelect={selectStock} />}
         {view === "compare" && <Compare stocks={stocks} onSelect={selectStock} marketRepository={services.marketRepository} />}
-        {view === "valuation" && <ValuationLab stocks={stocks} initialSymbol={selectedSymbol} onSelect={selectStock} />}
+        {view === "valuation" && <ValuationLab key={selectedSymbol} stocks={stocks} initialSymbol={selectedSymbol} onSelect={selectStock} />}
         {view === "options" && <OptionsLab stocks={stocks} initialSymbol={selectedSymbol} onSelect={selectStock} onSymbolChange={(symbol) => { setSelectedSymbol(symbol); writeView("options", symbol); }} />}
         {view === "filings" && <FilingIntel stocks={stocks} onSelect={selectStock} />}
         {view === "signals" && <StockIntelligence stocks={stocks} repository={services.researchSignalRepository} onSelect={selectStock} />}

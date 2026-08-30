@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { StockSummary } from "@/src/domain/stock";
 import { formatCompactCurrency, formatPercent } from "@/src/domain/analytics";
 import { MetricCard, ScoreDial, StockMark, Tag } from "@/src/components/ui";
+import { CompanySelect } from "@/src/components/CompanySelect";
 
 export function ValuationLab({ stocks, initialSymbol, onSelect }: { stocks: StockSummary[]; initialSymbol: string; onSelect: (symbol: string) => void }) {
   const [symbol, setSymbol] = useState(initialSymbol || stocks[0]?.symbol || "");
@@ -18,7 +19,7 @@ export function ValuationLab({ stocks, initialSymbol, onSelect }: { stocks: Stoc
 
   return (
     <div className="view-stack">
-      <header className="section-hero section-hero--valuation"><div><span className="hero-panel__kicker">Interactive valuation laboratory</span><h1>Make expectations<br />visible.</h1><p>Build a transparent cash-flow scenario, pressure-test assumptions, and compare it with the market price.</p></div><div className="valuation-company-picker"><StockMark symbol={stock.symbol} size="lg" /><label><span className="eyebrow">Valuing</span><select value={symbol} onChange={(event) => setSymbol(event.target.value)}>{stocks.map((item) => <option key={item.symbol} value={item.symbol}>{item.symbol} — {item.name}</option>)}</select><small>Latest FCF {formatCompactCurrency(stock.latestAnnual?.freeCashFlow)}</small></label></div></header>
+      <header className="section-hero section-hero--valuation"><div><span className="hero-panel__kicker">Interactive valuation laboratory</span><h1>Make expectations<br />visible.</h1><p>Build a transparent cash-flow scenario, pressure-test assumptions, and compare it with the market price.</p></div><div className="valuation-company-picker"><StockMark symbol={stock.symbol} size="lg" /><CompanySelect stocks={stocks} value={stock.symbol} label="Valuing" detail={`Latest FCF ${formatCompactCurrency(stock.latestAnnual?.freeCashFlow)}`} onChange={setSymbol} align="right" /></div></header>
 
       <section className="metric-grid metric-grid--four">
         <MetricCard label="Model value" value={`$${result.perShare.toFixed(2)}`} detail={<Tag tone={upside >= 0 ? "good" : "bad"}>{formatPercent(upside)} vs price</Tag>} accent="green" />

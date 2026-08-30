@@ -2,7 +2,7 @@ import type { AnalyzedStock, MarketIndex } from "@/src/domain/stock";
 import type { InstitutionalIndex, InstitutionalManager } from "@/src/domain/institutional";
 import type { GovernmentFiler, GovernmentLeaderboardDataset, GovernmentMeta, GovernmentProfile, GovernmentTrade } from "@/src/domain/government";
 import type { BenchmarkDataset } from "@/src/domain/portfolio";
-import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
+import type { ResearchSignal, ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
 
 export interface MarketRepository {
   loadIndex(): Promise<MarketIndex>;
@@ -28,6 +28,7 @@ export interface GovernmentRepository {
 
 export interface ResearchSignalRepository {
   load(): Promise<ResearchSignalDataset>;
+  loadSymbol(symbol: string): Promise<ResearchSignal | null>;
 }
 
 export interface ApplicationServices {

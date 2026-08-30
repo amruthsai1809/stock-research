@@ -50,16 +50,16 @@ The scripts directory is the ingestion boundary:
 - `update-institutional.mjs` validates manager CIK identities, combines Form 13F originals and amendments, derives lifecycle state, and emits a small directory plus lazy-loaded manager profiles.
 - `update-government.mjs` normalizes House Clerk, Senate eFD, and OGE records, refreshes current-member metadata, and emits a directory, recent feed, methodology-aware leaderboard, metadata, and lazy-loaded filer profiles. The ranking policy is shared with `build-government-leaderboard.mjs` so existing snapshots can be rebuilt without another network ingestion.
 - `update-intelligence.mjs` is the orchestration entry point for both intelligence pipelines.
-- `update-research-signals.mjs` derives recent SEC Form 4/4-A open-market activity and active-manager 13F breadth for the covered stock universe.
+- `update-research-signals.mjs` builds the full-universe signal directory and lazy per-company profiles. It combines rolling SEC Form 4/4-A open-market activity, official FINRA short-interest observations, and active-manager 13F breadth without mixing report periods.
 - Generated records retain report dates and source filing links so the UI can expose provenance.
 
 The market boundary follows the same pattern. A compact, precomputed index supports search and universe-wide analysis. A chart or portfolio fetches only the requested companies through a cache-deduplicating repository. Each company is split into a stable historical archive and a small current-year delta, so ordinary daily deployments do not rewrite ten years of unchanged observations.
 
 The scheduled updater treats the current Cloudflare deployment as its last-known-good baseline. It loads stable archives and current-year deltas, requests only the newest market sessions, merges by trading date, trims to the ten-year contract, and carries forward SEC-derived annuals. The original full-refresh path remains available for controlled backfills; routine CI refreshes do not depend on SEC accepting shared GitHub runner IP addresses.
 
-The application loads directories after the shell renders and requests an individual company, manager, or filer profile only when selected. This keeps the initial transfer and JavaScript bundle small, avoids monolithic datasets, and lets the browser and Cloudflare cache immutable history independently.
+The application loads directories after the shell renders and requests an individual company, signal profile, manager, or filer profile only when selected. This keeps the initial transfer and JavaScript bundle small, avoids monolithic datasets, and lets the browser and Cloudflare cache immutable history independently.
 
-Every generated research snapshot is assembled in a sibling staging directory, validated for completeness and lineage, and then swapped into place. Single-file generators use an atomic temporary-file rename. A failed refresh therefore leaves the last known-good dataset intact instead of exposing a partially written index or profile set. Production market files exist only in the ephemeral GitHub runner and Cloudflare static deployment; Git history never receives daily data snapshots.
+Every generated research snapshot is assembled in a sibling staging directory, validated for completeness and lineage, and then swapped into place. Single-file generators use an atomic temporary-file rename. The signal generator first loads the deployed snapshot as its baseline, then replaces source observations only when a newer official release is available. A failed refresh therefore leaves the last known-good dataset intact instead of exposing a partially written index or profile set. Production market and signal files exist only in the ephemeral GitHub runner and Cloudflare static deployment; Git history never receives daily data snapshots.
 
 ## Intelligence lifecycle
 
@@ -101,7 +101,7 @@ Architecture boundary tests prevent domain-to-framework imports, presentation-to
 - Zod contracts validate static JSON at repository boundaries before domain code receives it.
 - Unit tests cover domain policies, view-model filtering and sorting, runtime contracts, ranking rules, and atomic snapshot helpers with enforced coverage thresholds.
 - Options tests add exact payoff, put-call parity, American-versus-European bounds, tree convergence, implied-volatility recovery, Greek signs/scaling, date policies, worker freshness, and scenario-surface invariants.
-- Browser tests exercise ten-year chart controls, on-demand company loading, disclosure ranking and position ordering, manager lifecycle labeling, portfolio import, global search, theme switching, desktop/mobile feature boundaries, visual stability, and WCAG A/AA checks.
+- Browser tests exercise ten-year chart controls, on-demand company and signal loading, every company selector, disclosure ranking and position ordering, manager lifecycle labeling, portfolio import, global search, theme switching, desktop/mobile feature boundaries, visual stability, and WCAG A/AA checks.
 - Feature-level lazy loading keeps large parsers and research workbenches out of the initial client bundle. CI rejects any individual client asset above the documented bundle budget.
 - Dependency updates are monitored automatically, and production dependencies are audited on every quality run.
 

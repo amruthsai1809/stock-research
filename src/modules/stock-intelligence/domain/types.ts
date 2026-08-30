@@ -29,11 +29,21 @@ export type InsiderTransaction = {
 export type InstitutionalSignal = {
   reportDate: string | null;
   filingDate: string | null;
+  expectedManagers: number;
+  managersReported: number;
   managersHolding: number;
   managersIncreased: number;
   managersReduced: number;
   managersNew: number;
   managersExited: number;
+};
+
+export type InsiderActivitySummary = {
+  purchaseCount: number;
+  saleCount: number;
+  purchaseValue: number;
+  saleValue: number;
+  discretionarySaleCount: number;
 };
 
 export type AnalystTrend = {
@@ -82,12 +92,21 @@ export type ShortInterestSignal = {
   daysToCover: number | null;
   institutionalOwnership: number | null;
   insiderOwnership: number | null;
+  sourceUrl: string | null;
+  history: Array<{
+    asOf: string;
+    sharesShort: number;
+    sharesShortPriorMonth: number | null;
+    daysToCover: number | null;
+    sharesPercentOutstanding: number | null;
+  }>;
 };
 
 export type ResearchSignal = {
   symbol: string;
   insider: {
     asOf: string | null;
+    summary: InsiderActivitySummary;
     transactions: InsiderTransaction[];
   };
   institutional: InstitutionalSignal;
@@ -96,12 +115,20 @@ export type ResearchSignal = {
 };
 
 export type ResearchSignalDataset = {
+  schemaVersion: number;
   generatedAt: string;
   methodology: string;
   sources: {
     insiders: string;
     institutions: string;
     analysts: string;
+    shortInterest: string;
+  };
+  coverage: {
+    universe: number;
+    insiders: number;
+    shortInterest: number;
+    institutions: number;
   };
   signals: Record<string, ResearchSignal>;
 };
