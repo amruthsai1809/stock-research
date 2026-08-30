@@ -3,7 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-const hasFullDuolingoFixture = existsSync(resolve(process.cwd(), "public/data/signals/duol.json"));
+const hasFullDuolingoFixture = process.env.EQUITY_LAB_E2E_BOOTSTRAP_ONLY !== "1"
+  && existsSync(resolve(process.cwd(), "public/data/signals/duol.json"));
 
 const errorsByPage = new WeakMap<Page, string[]>();
 
@@ -287,7 +288,7 @@ test("insider chart, filters, and SEC rows reconcile visibly", async ({ page }) 
   await page.getByRole("button", { name: "Ownership & activity", exact: true }).click();
   await page.getByRole("button", { name: "1Y", exact: true }).click();
   await page.getByRole("tab", { name: /All ownership changes/i }).click();
-  await page.getByRole("button", { name: /^Compensation \d+$/ }).click();
+  await page.getByRole("button", { name: hasFullDuolingoFixture ? /^Compensation \d+$/ : /^Sales \d+$/ }).click();
   await expect(page.locator(".insider-event").first()).toBeVisible();
   const mobileWidth = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }));
   expect(mobileWidth.document).toBeLessThanOrEqual(mobileWidth.viewport + 1);
