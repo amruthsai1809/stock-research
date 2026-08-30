@@ -104,9 +104,9 @@ test("every primary research feature loads through the application shell", async
 });
 
 test("options lab links contract, time, volatility, charts, and worker output", async ({ page }) => {
-  await page.goto("/?view=options&symbol=DUOL");
+  await page.goto("/?view=options&symbol=TSLA");
   await expect(page.getByRole("heading", { name: /See what price and time actually do/i })).toBeVisible();
-  await expect(page.getByLabel("Underlying company")).toHaveValue("DUOL");
+  await expect(page.getByLabel("Underlying company")).toHaveValue("TSLA");
   await expect(page.getByRole("heading", { name: /This scenario (makes|loses) money/i })).toBeVisible();
   await expect(page.getByText("Ready", { exact: true })).toBeVisible();
   if (process.env.VISUAL_EVIDENCE === "1") await page.locator("main.content").screenshot({ path: "outputs/visual-qa/options-desktop.png" });
@@ -139,7 +139,7 @@ test("options lab links contract, time, volatility, charts, and worker output", 
 
   if (process.env.VISUAL_EVIDENCE === "1") {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/?view=options&symbol=DUOL");
+    await page.goto("/?view=options&symbol=TSLA");
     await expect(page.getByRole("heading", { name: /See what price and time actually do/i })).toBeVisible();
     await page.waitForTimeout(500);
     await page.screenshot({ path: "outputs/visual-qa/options-mobile.png", fullPage: false });
