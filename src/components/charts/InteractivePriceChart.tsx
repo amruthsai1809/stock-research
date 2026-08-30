@@ -19,8 +19,8 @@ import { priceRangeLabel, selectPriceRange, type PriceRangeKey } from "@/src/dom
 
 type ChartStyle = "line" | "candles";
 
-const fullRanges: PriceRangeKey[] = ["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y"];
-const compactRanges: PriceRangeKey[] = ["3M", "6M", "1Y", "3Y", "5Y"];
+const fullRanges: PriceRangeKey[] = ["1M", "3M", "6M", "YTD", "1Y", "3Y", "5Y", "10Y"];
+const compactRanges: PriceRangeKey[] = ["3M", "6M", "1Y", "3Y", "5Y", "10Y"];
 
 export function InteractivePriceChart({
   prices,
@@ -100,7 +100,7 @@ export function InteractivePriceChart({
         timeVisible: false,
         rightOffset: 3,
         barSpacing: compact ? 5 : 7,
-        // A 5Y daily series contains roughly 1,250 points. Values above ~0.5
+        // A 10Y daily series contains roughly 2,500 points. Values above ~0.5
         // silently force lightweight-charts to clip the beginning on common
         // laptop widths even when setVisibleRange receives the correct dates.
         minBarSpacing: 0.1,

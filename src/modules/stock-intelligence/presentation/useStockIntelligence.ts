@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ResearchSignalRepository } from "@/src/application/ports/repositories";
-import type { AnalyzedStock } from "@/src/domain/stock";
+import type { StockSummary } from "@/src/domain/stock";
 import { scoreIntelligenceUniverse } from "../domain/scoring";
 import type { IntelligenceStrategyId, ResearchSignalDataset } from "../domain/types";
 
-export function useStockIntelligence(stocks: AnalyzedStock[], repository: ResearchSignalRepository) {
+export function useStockIntelligence(stocks: StockSummary[], repository: ResearchSignalRepository) {
   const [dataset, setDataset] = useState<ResearchSignalDataset | null>(null);
   const [strategy, setStrategy] = useState<IntelligenceStrategyId>("balanced");
   const [selectedSymbol, setSelectedSymbol] = useState("");

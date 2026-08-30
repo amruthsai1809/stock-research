@@ -2,7 +2,7 @@
 
 ## Design goals
 
-TIDE is designed around four constraints: static deployment, explainable calculations, source traceability, and a codebase that remains approachable as the feature set grows.
+Stock Research is designed around five constraints: zero-cost deployment, explainable calculations, source traceability, scalable static data, and a codebase that remains approachable as the feature set grows.
 
 ## Dependency direction
 
@@ -20,7 +20,7 @@ Feature modules may consume domain functions and UI primitives. Domain modules n
 
 ## Model, view, and data boundaries
 
-TIDE uses pragmatic model-view separation rather than an application server:
+The product uses pragmatic model-view separation rather than a stateful application server:
 
 - Domain modules are the model: typed financial entities and deterministic policies.
 - Application modules define use cases and ports. They do not know whether data came from a JSON snapshot, test fixture, or future API.
@@ -35,16 +35,19 @@ There are no feature-to-feature imports. A company, portfolio, 13F manager, or p
 
 The scripts directory is the ingestion boundary:
 
-- `update-data.mjs` normalizes price history and issuer-specific SEC XBRL concepts.
+- `market/universe.mjs` implements the $1 billion Nasdaq/NYSE/NYSE American common-share and ADR policy by joining Nasdaq screening data to SEC identifiers. It rejects non-common instruments and requires DUOL as an acceptance symbol.
+- `update-data.mjs` fetches ten years of end-of-day history (or complete post-IPO history), normalizes issuer-specific SEC XBRL concepts, and emits the split market contract.
 - `update-institutional.mjs` validates manager CIK identities, combines Form 13F originals and amendments, derives lifecycle state, and emits a small directory plus lazy-loaded manager profiles.
 - `update-government.mjs` normalizes House Clerk, Senate eFD, and OGE records, refreshes current-member metadata, and emits a directory, recent feed, methodology-aware leaderboard, metadata, and lazy-loaded filer profiles. The ranking policy is shared with `build-government-leaderboard.mjs` so existing snapshots can be rebuilt without another network ingestion.
 - `update-intelligence.mjs` is the orchestration entry point for both intelligence pipelines.
 - `update-research-signals.mjs` derives recent SEC Form 4/4-A open-market activity and active-manager 13F breadth for the covered stock universe.
 - Generated records retain report dates and source filing links so the UI can expose provenance.
 
-The application loads directories after the shell renders and requests an individual manager or filer profile only when selected. This keeps the JavaScript bundle small, avoids a single monolithic intelligence file, and lets the browser cache each immutable snapshot independently.
+The market boundary follows the same pattern. A compact, precomputed index supports search and universe-wide analysis. A chart or portfolio fetches only the requested companies through a cache-deduplicating repository. Each company is split into a stable historical archive and a small current-year delta, so ordinary daily deployments do not rewrite ten years of unchanged observations.
 
-Every generated research snapshot is assembled in a sibling staging directory, validated for completeness and lineage, and then swapped into place. Single-file generators use an atomic temporary-file rename. A failed refresh therefore leaves the last known-good dataset intact instead of exposing a partially written index or profile set.
+The application loads directories after the shell renders and requests an individual company, manager, or filer profile only when selected. This keeps the initial transfer and JavaScript bundle small, avoids monolithic datasets, and lets the browser and Cloudflare cache immutable history independently.
+
+Every generated research snapshot is assembled in a sibling staging directory, validated for completeness and lineage, and then swapped into place. Single-file generators use an atomic temporary-file rename. A failed refresh therefore leaves the last known-good dataset intact instead of exposing a partially written index or profile set. Production market files exist only in the ephemeral GitHub runner and Cloudflare static deployment; Git history never receives daily data snapshots.
 
 ## Intelligence lifecycle
 
@@ -84,14 +87,14 @@ Architecture boundary tests prevent domain-to-framework imports, presentation-to
 
 - Zod contracts validate static JSON at repository boundaries before domain code receives it.
 - Unit tests cover domain policies, view-model filtering and sorting, runtime contracts, ranking rules, and atomic snapshot helpers with enforced coverage thresholds.
-- Browser tests exercise five-year chart ranges, disclosure ranking and position ordering, manager lifecycle labeling, portfolio import, global search, theme switching, every primary feature boundary, and WCAG A/AA checks.
+- Browser tests exercise ten-year chart controls, on-demand company loading, disclosure ranking and position ordering, manager lifecycle labeling, portfolio import, global search, theme switching, desktop/mobile feature boundaries, visual stability, and WCAG A/AA checks.
 - Feature-level lazy loading keeps large parsers and research workbenches out of the initial client bundle. CI rejects any individual client asset above the documented bundle budget.
 - Dependency updates are monitored automatically, and production dependencies are audited on every quality run.
 
 ## Extension points
 
 - Price providers can be replaced inside the ingestion script.
-- Company coverage is controlled by `scripts/company-registry.mjs`.
+- Company coverage is controlled by the explicit policy in `scripts/market/universe.mjs`; small symbol lists are supported only as development refresh scopes.
 - New cross-cutting scores belong in a focused module with a domain policy, application use case, runtime data contract, and methodology documentation.
 - New product capabilities belong in a focused `src/features/<feature>` module.
 - New source formats implement a parser or repository adapter without changing feature views.
@@ -101,3 +104,4 @@ Architecture boundary tests prevent domain-to-framework imports, presentation-to
 
 - [ADR 0001: Static modular architecture](adr/0001-static-modular-architecture.md)
 - [ADR 0002: Atomic research snapshots](adr/0002-atomic-research-snapshots.md)
+- [ADR 0003: Split market snapshots with stable paths](adr/0003-split-market-snapshots.md)

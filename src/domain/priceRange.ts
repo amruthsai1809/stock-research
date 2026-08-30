@@ -1,6 +1,6 @@
 import type { PricePoint } from "@/src/domain/stock";
 
-export type PriceRangeKey = "1M" | "3M" | "6M" | "YTD" | "1Y" | "3Y" | "5Y";
+export type PriceRangeKey = "1M" | "3M" | "6M" | "YTD" | "1Y" | "3Y" | "5Y" | "10Y";
 
 export function priceRangeCutoff(lastDate: string, range: PriceRangeKey) {
   const last = new Date(`${lastDate}T00:00:00Z`);

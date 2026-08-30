@@ -1,6 +1,6 @@
 {
-  "name": "tide-equity-research",
-  "version": "0.1.0",
+  "name": "stock-research",
+  "version": "1.0.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -10,17 +10,19 @@
     "build": "vinext build",
     "start": "vinext start",
     "data:update": "node scripts/update-data.mjs",
+    "data:update:sample": "node --env-file-if-exists=.env.local scripts/update-data.mjs",
     "data:intelligence": "node scripts/update-intelligence.mjs",
     "data:government:leaderboard": "node scripts/build-government-leaderboard.mjs",
     "data:benchmarks": "node scripts/update-benchmarks.mjs",
     "data:signals": "node scripts/update-research-signals.mjs",
-    "data:update:all": "npm run data:update && npm run data:benchmarks && npm run data:intelligence && npm run data:signals",
+    "data:update:all": "npm run data:update && npm run data:benchmarks",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run --coverage",
     "test:data": "node --test tests/*.test.mjs",
     "test:e2e": "playwright test",
     "test": "npm run typecheck && npm run test:unit && npm run build && npm run bundle:check && npm run test:data",
     "bundle:check": "node scripts/check-bundle-budget.mjs",
+    "deploy:cloudflare": "wrangler deploy --config dist/server/wrangler.json",
     "security:check": "npm audit --omit=dev --audit-level=high",
     "quality": "npm run lint && npm test && npm run security:check",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"

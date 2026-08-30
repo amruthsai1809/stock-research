@@ -1,4 +1,4 @@
-import type { AnalyzedStock } from "@/src/domain/stock";
+import type { StockSummary } from "@/src/domain/stock";
 import type { FactorEvidence, FactorScore, IntelligenceFactorKey, IntelligenceStrategyId, ResearchSignal, StockIntelligenceScore } from "./types";
 
 const factorLabels: Record<IntelligenceFactorKey, string> = {
@@ -41,12 +41,13 @@ function metricPercentile(value: number | null, peers: Array<number | null>, hig
   return higherIsBetter ? percentile : 100 - percentile;
 }
 
-function latestMarketCap(stock: AnalyzedStock) {
+function latestMarketCap(stock: StockSummary) {
+  if (stock.marketCap && stock.marketCap > 0) return stock.marketCap;
   const shares = stock.latestAnnual?.shares;
   return shares && shares > 0 ? shares * stock.latestPrice : null;
 }
 
-function estimatedFairValue(stock: AnalyzedStock) {
+function estimatedFairValue(stock: StockSummary) {
   const annual = stock.latestAnnual;
   if (!annual?.freeCashFlow || annual.freeCashFlow <= 0 || !annual.shares || annual.shares <= 0) return null;
   const growth = clamp(stock.revenueGrowth ?? 4, -5, 14) / 100;
@@ -65,7 +66,7 @@ function estimatedFairValue(stock: AnalyzedStock) {
   return Number.isFinite(perShare) && perShare > 0 ? perShare : null;
 }
 
-function qualityFactor(stock: AnalyzedStock): RawFactor {
+function qualityFactor(stock: StockSummary): RawFactor {
   const profitability = average([
     stock.operatingMargin == null ? null : scale(stock.operatingMargin, 0, 35),
     stock.freeCashFlowMargin == null ? null : scale(stock.freeCashFlowMargin, 0, 30),
@@ -83,7 +84,7 @@ function qualityFactor(stock: AnalyzedStock): RawFactor {
     : available("quality", Math.round(profitability), stock.latestAnnual?.filed ?? stock.latestAnnual?.end ?? null, evidence);
 }
 
-function valuationFactor(stock: AnalyzedStock, peers: AnalyzedStock[]): { factor: RawFactor; fairValue: number | null; marginOfSafety: number | null } {
+function valuationFactor(stock: StockSummary, peers: StockSummary[]): { factor: RawFactor; fairValue: number | null; marginOfSafety: number | null } {
   const marketCap = latestMarketCap(stock);
   const netYield = marketCap && stock.latestAnnual?.netIncome != null ? (stock.latestAnnual.netIncome / marketCap) * 100 : null;
   const fcfYield = marketCap && stock.latestAnnual?.freeCashFlow != null ? (stock.latestAnnual.freeCashFlow / marketCap) * 100 : null;
@@ -106,7 +107,7 @@ function valuationFactor(stock: AnalyzedStock, peers: AnalyzedStock[]): { factor
   return { factor: score == null ? unavailable("valuation", "Positive cash flow or share-count inputs are unavailable.") : available("valuation", Math.round(score), stock.latestAnnual?.filed ?? null, evidence), fairValue, marginOfSafety };
 }
 
-function growthFactor(stock: AnalyzedStock): RawFactor {
+function growthFactor(stock: StockSummary): RawFactor {
   const current = stock.latestAnnual;
   const previous = stock.previousAnnual;
   const fcfGrowth = current?.freeCashFlow != null && previous?.freeCashFlow ? ((current.freeCashFlow - previous.freeCashFlow) / Math.abs(previous.freeCashFlow)) * 100 : null;
@@ -121,7 +122,7 @@ function growthFactor(stock: AnalyzedStock): RawFactor {
   return score == null ? unavailable("growth", "Two comparable annual periods are unavailable.") : available("growth", Math.round(score), current?.filed ?? null, evidence);
 }
 
-function momentumFactor(stock: AnalyzedStock, peers: AnalyzedStock[], strategy: IntelligenceStrategyId): RawFactor {
+function momentumFactor(stock: StockSummary, peers: StockSummary[], strategy: IntelligenceStrategyId): RawFactor {
   const trendPercentile = metricPercentile(stock.oneYearReturn, peers.map((peer) => peer.oneYearReturn));
   const dipSetup = average([
     scale(stock.drawdown52Week, -45, -8),
@@ -134,21 +135,21 @@ function momentumFactor(stock: AnalyzedStock, peers: AnalyzedStock[], strategy: 
     scale(stock.distanceFrom200Day, -20, 20),
   ]);
   const score = strategy === "dip-hunter" ? dipSetup : trendScore;
-  return available("momentum", Math.round(score ?? 50), stock.prices.at(-1)?.date ?? null, [
+  return available("momentum", Math.round(score ?? 50), stock.priceAsOf, [
     { label: "12-month return", value: pct(stock.oneYearReturn), direction: stock.oneYearReturn > 8 ? "positive" : stock.oneYearReturn < -8 ? "negative" : "neutral", detail: "Adjusted close performance over roughly 252 trading days." },
     { label: "vs. 200-day", value: pct(stock.distanceFrom200Day), direction: stock.distanceFrom200Day > 0 ? "positive" : stock.distanceFrom200Day < -12 ? "negative" : "neutral", detail: "Distance from the long-term moving-average trend." },
     { label: "From 52-week high", value: pct(stock.drawdown52Week), direction: strategy === "dip-hunter" && stock.drawdown52Week < -12 ? "positive" : stock.drawdown52Week < -30 ? "negative" : "neutral", detail: strategy === "dip-hunter" ? "A meaningful pullback can improve opportunity only when other factors remain healthy." : "A deep drawdown reduces ordinary trend strength." },
   ]);
 }
 
-function riskFactor(stock: AnalyzedStock, peers: AnalyzedStock[]): RawFactor {
+function riskFactor(stock: StockSummary, peers: StockSummary[]): RawFactor {
   const score = average([
     metricPercentile(stock.volatility, peers.map((peer) => peer.volatility), false),
     scale(stock.drawdown52Week, -50, 0),
     stock.liabilityRatio == null ? null : scale(stock.liabilityRatio, 0.9, 0.2),
     stock.latestAnnual?.freeCashFlow == null ? null : stock.latestAnnual.freeCashFlow > 0 ? 75 : 20,
   ]);
-  return available("risk", Math.round(score ?? 50), stock.prices.at(-1)?.date ?? null, [
+  return available("risk", Math.round(score ?? 50), stock.priceAsOf, [
     { label: "Annual volatility", value: pct(stock.volatility), direction: stock.volatility < 25 ? "positive" : stock.volatility > 50 ? "negative" : "neutral", detail: "Annualized realized volatility from recent daily prices." },
     { label: "52-week drawdown", value: pct(stock.drawdown52Week), direction: stock.drawdown52Week > -12 ? "positive" : stock.drawdown52Week < -30 ? "negative" : "neutral", detail: "Peak-to-current loss over the latest trading year." },
     { label: "Liability ratio", value: stock.liabilityRatio == null ? "Unavailable" : pct(stock.liabilityRatio * 100), direction: (stock.liabilityRatio ?? 0) < 0.55 ? "positive" : (stock.liabilityRatio ?? 0) > 0.8 ? "negative" : "neutral", detail: "Reported liabilities divided by assets." },
@@ -218,7 +219,7 @@ function grade(score: number): StockIntelligenceScore["grade"] {
   return "Caution";
 }
 
-export function scoreStockIntelligence(stock: AnalyzedStock, universe: AnalyzedStock[], signal: ResearchSignal | undefined, strategy: IntelligenceStrategyId): StockIntelligenceScore {
+export function scoreStockIntelligence(stock: StockSummary, universe: StockSummary[], signal: ResearchSignal | undefined, strategy: IntelligenceStrategyId): StockIntelligenceScore {
   const peers = universe.filter((candidate) => candidate.sector === stock.sector);
   const peerSet = peers.length >= 4 ? peers : universe;
   const valuation = valuationFactor(stock, peerSet);
@@ -259,10 +260,10 @@ export function scoreStockIntelligence(stock: AnalyzedStock, universe: AnalyzedS
     factors,
     positives: positives.length ? positives : ["No factor currently clears the supportive threshold."],
     cautions: cautions.length ? cautions : ["No factor currently clears the high-risk threshold."],
-    dataAsOf: stock.prices.at(-1)?.date ?? null,
+    dataAsOf: stock.priceAsOf,
   };
 }
 
-export function scoreIntelligenceUniverse(stocks: AnalyzedStock[], signals: Record<string, ResearchSignal>, strategy: IntelligenceStrategyId) {
+export function scoreIntelligenceUniverse(stocks: StockSummary[], signals: Record<string, ResearchSignal>, strategy: IntelligenceStrategyId) {
   return stocks.map((stock) => scoreStockIntelligence(stock, stocks, signals[stock.symbol], strategy)).sort((a, b) => b.score - a.score || b.confidence - a.confidence);
 }

@@ -13,7 +13,7 @@ function round(value) { return Math.round(value * 10_000) / 10_000; }
 
 async function loadBenchmark(benchmark) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${benchmark.symbol}?range=10y&interval=1d&events=div%2Csplits`;
-  const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 TIDE research-data refresh" } });
+  const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 Stock Research data refresh" } });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${benchmark.symbol}`);
   const payload = await response.json();
   const result = payload?.chart?.result?.[0];

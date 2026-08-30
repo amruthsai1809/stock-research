@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { product } from "@/src/config/product";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,11 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://tide-equity-research.amruthsai1809.chatgpt.site"),
-  title: "TIDE — Evidence-first equity research",
+  metadataBase: new URL("https://amruthg.com"),
+  title: `${product.name} — Evidence-first equity research`,
   description:
     "Research stocks with transparent multi-factor scores, dip analysis, 13F portfolios, public-official trades, and private AI-assisted memos.",
-  applicationName: "TIDE",
+  applicationName: product.name,
   keywords: [
     "stock research",
     "AI stock analysis",
@@ -29,27 +30,18 @@ export const metadata: Metadata = {
     "valuation",
   ],
   openGraph: {
-    title: "TIDE — Evidence before opinion",
+    title: `${product.name} — Evidence before opinion`,
     description:
       "Transparent stock scores, filing-linked evidence, dip analysis, portfolios, and private AI-assisted research.",
     type: "website",
-    siteName: "TIDE",
+    siteName: product.name,
     url: "/",
-    images: [
-      {
-        url: "/og-financial-atlas.png",
-        width: 1731,
-        height: 909,
-        alt: "TIDE — Evidence before opinion",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "TIDE — Evidence before opinion",
+    title: `${product.name} — Evidence before opinion`,
     description:
       "Transparent stock scores, filing-linked evidence, dip analysis, portfolios, and private AI-assisted research.",
-    images: ["/og-financial-atlas.png"],
   },
 };
 

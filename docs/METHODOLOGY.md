@@ -1,5 +1,13 @@
 # Research methodology
 
+## Equity universe and price history
+
+Each production refresh screens Nasdaq market data and joins each ticker to the SEC exchange/CIK registry. A security is eligible when its screen-time market capitalization is at least $1 billion, it maps to Nasdaq or NYSE (including NYSE American listings reported through the NYSE family), and it is a common equity or ADR. Name-based instrument rules reject ETFs, funds, preferred shares, warrants, rights, units, notes, bonds, debentures, and similar non-common securities. The generated index records the exact eligible and successfully published counts because the universe changes with prices, listings, and corporate actions.
+
+The generator requests a rolling ten-year end-of-day window. A company listed within that window retains its complete available post-IPO history. Prices are adjusted for comparison and return calculations; unadjusted OHLC and volume remain available for chart inspection. “Ten years” is a data-coverage boundary, not a statement that every newer listing has ten calendar years of observations.
+
+Market capitalization is used only for universe eligibility and valuation context. It is a screen-time snapshot, not a real-time quote. DUOL is an explicit acceptance symbol so the coverage policy is tested against a newer, non-index growth company.
+
 ## Dip score
 
 The Dip Finder is intentionally transparent:
@@ -30,17 +38,17 @@ The model omits many company-specific adjustments. Its purpose is to make assump
 
 ## Data confidence
 
-TIDE preserves missing values and exposes reporting dates. Composite models treat missing factors as neutral rather than inferring undisclosed values. This prevents absence of data from being mistaken for strong or weak performance.
+The product preserves missing values and exposes reporting dates. Composite models treat missing factors as neutral rather than inferring undisclosed values. This prevents absence of data from being mistaken for strong or weak performance.
 
 ## Portfolio comparison
 
-Portfolio activity is parsed and normalized locally. Holdings are reconstructed from buys, sales, splits, fees, dividends, deposits, and withdrawals that appear in the imported history. TIDE prices supported securities with the latest available end-of-day snapshot.
+Portfolio activity is parsed and normalized locally. Holdings are reconstructed from buys, sales, splits, fees, dividends, deposits, and withdrawals that appear in the imported history. The product prices supported securities with the latest available end-of-day snapshot.
 
 The benchmark is cash-flow matched: each portfolio deposit is invested into the selected benchmark on the corresponding trading date, and withdrawals reduce the benchmark on the same basis. This avoids comparing a gradually funded portfolio with a hypothetical lump-sum investment. Results remain dependent on complete transaction history and are explicitly labeled when coverage is incomplete.
 
 ## Form 13F analysis
 
-TIDE reads official SEC Form 13F information tables, combines compatible originals and amendments by report period, and retains up to 20 quarters per curated manager. Quarter comparisons use reported share counts to distinguish disclosed manager activity from market-value movement. Concentration is the share of reported 13F value represented by the largest positions; turnover is a share-change-based proxy, not audited fund turnover.
+The product reads official SEC Form 13F information tables, combines compatible originals and amendments by report period, and retains up to 20 quarters per curated manager. Quarter comparisons use reported share counts to distinguish disclosed manager activity from market-value movement. Concentration is the share of reported 13F value represented by the largest positions; turnover is a share-change-based proxy, not audited fund turnover.
 
 A position history labels the first loaded appearance as `entered`, subsequent share-count increases as `added`, decreases as `trimmed`, and disappearance as `exited`. These labels describe quarter-end snapshots. They do not identify the exact trade date or cost basis. If a position is already present in the earliest loaded quarter, the interface says “held since at least” that quarter.
 
@@ -50,7 +58,7 @@ Form 13F is normally filed up to 45 days after quarter end. It covers specified 
 
 ## Public-official disclosures
 
-Public transaction reports use dollar ranges, not exact values. TIDE preserves each reported range and uses its midpoint only to order or size visual elements. It always separates the transaction date from the public filing date and flags records marked late by the normalized source.
+Public transaction reports use dollar ranges, not exact values. The product preserves each reported range and uses its midpoint only to order or size visual elements. It always separates the transaction date from the public filing date and flags records marked late by the normalized source.
 
 The disclosure leaderboard compares officials using eligible non-derivative purchases with valid ticker and price coverage. Its one-year return is the median underlying-security return one year after those purchases. Options, warrants, and other derivative proxies are excluded because an underlying stock return is not the return of the disclosed instrument. The consistency rank uses the 95% Wilson lower bound of the positive one-year outcome rate, so a small perfect sample does not automatically outrank a large history.
 

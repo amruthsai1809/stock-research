@@ -1,11 +1,12 @@
-import type { MarketDataset } from "@/src/domain/stock";
+import type { AnalyzedStock, MarketIndex } from "@/src/domain/stock";
 import type { InstitutionalIndex, InstitutionalManager } from "@/src/domain/institutional";
 import type { GovernmentFiler, GovernmentLeaderboardDataset, GovernmentMeta, GovernmentProfile, GovernmentTrade } from "@/src/domain/government";
 import type { BenchmarkDataset } from "@/src/domain/portfolio";
 import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
 
 export interface MarketRepository {
-  load(): Promise<MarketDataset>;
+  loadIndex(): Promise<MarketIndex>;
+  loadStock(symbol: string): Promise<AnalyzedStock>;
 }
 
 export interface BenchmarkRepository {

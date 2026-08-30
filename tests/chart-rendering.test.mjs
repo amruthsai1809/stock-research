@@ -6,7 +6,7 @@ const priceChartUrl = new URL("../src/components/charts/InteractivePriceChart.ts
 const comparisonChartUrl = new URL("../src/components/charts/ComparisonChart.tsx", import.meta.url);
 const financialAtlasUrl = new URL("../src/components/charts/FinancialAtlas.tsx", import.meta.url);
 
-test("long daily histories may compress enough to render the entire five-year range", async () => {
+test("long daily histories may compress enough to render multi-year ranges", async () => {
   for (const url of [priceChartUrl, comparisonChartUrl]) {
     const source = await readFile(url, "utf8");
     assert.match(source, /minBarSpacing:\s*0\.1/);

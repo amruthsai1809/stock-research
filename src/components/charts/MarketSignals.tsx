@@ -1,10 +1,10 @@
 "use client";
 
-import type { AnalyzedStock } from "@/src/domain/stock";
+import type { ResearchStock } from "@/src/domain/stock";
 import type { ResearchSignal } from "@/src/modules/stock-intelligence/domain/types";
 import { Tag } from "@/src/components/ui";
 
-export function MarketSignals({ stock, signal }: { stock: AnalyzedStock; signal?: ResearchSignal }) {
+export function MarketSignals({ stock, signal }: { stock: ResearchStock; signal?: ResearchSignal }) {
   const transactions = signal?.insider.transactions ?? [];
   const purchaseValue = transactions.filter((item) => item.action === "purchase").reduce((sum, item) => sum + (item.value ?? 0), 0);
   const saleValue = transactions.filter((item) => item.action === "sale").reduce((sum, item) => sum + (item.value ?? 0), 0);
@@ -50,7 +50,7 @@ function InsiderActivity({ signal }: { signal?: ResearchSignal }) {
   </section>;
 }
 
-function AnalystConsensus({ stock, signal }: { stock: AnalyzedStock; signal?: ResearchSignal }) {
+function AnalystConsensus({ stock, signal }: { stock: ResearchStock; signal?: ResearchSignal }) {
   const analyst = signal?.analyst;
   if (!analyst?.available) return <section className="panel market-signal-card"><div className="panel-heading"><div><span className="eyebrow">Delayed consensus</span><h2>Analyst view</h2></div></div><Unavailable title="Analyst consensus unavailable" detail={analyst?.reason ?? "No public snapshot was loaded."} /></section>;
   const currentTrend = analyst.trend[0];
@@ -73,7 +73,7 @@ function AnalystConsensus({ stock, signal }: { stock: AnalyzedStock; signal?: Re
     <div className="rating-labels">{ratings.map((item) => <span key={item.label}><i className={`rating-distribution__${item.tone}`} />{item.label}<b>{item.value}</b></span>)}</div>
     <div className="target-ladder"><div><span style={{ left: `${position(analyst.targetLow)}%` }} /><span className="target-ladder__price" style={{ left: `${position(stock.latestPrice)}%` }} /><span className="target-ladder__mean" style={{ left: `${position(analyst.targetMean)}%` }} /><span style={{ left: `${position(analyst.targetHigh)}%` }} /></div><dl><span><dt>Low</dt><dd>{money(analyst.targetLow)}</dd></span><span><dt>Last close</dt><dd>{money(stock.latestPrice)}</dd></span><span><dt>Mean</dt><dd>{money(analyst.targetMean)}</dd></span><span><dt>High</dt><dd>{money(analyst.targetHigh)}</dd></span></dl></div>
     <div className="analyst-actions">{analyst.actions.slice(0, 5).map((action, index) => <article key={`${action.date}-${action.firm}-${index}`}><span className={`revision-dot revision-dot--${action.action}`} /><div><b>{action.firm}</b><small>{action.fromGrade && action.fromGrade !== action.toGrade ? `${action.fromGrade} → ` : ""}{action.toGrade || titleCase(action.action)}</small></div><span>{shortDate(action.date)}{action.currentPriceTarget != null && <small>{action.priceTargetAction || "Target"} {money(action.currentPriceTarget)}</small>}</span></article>)}</div>
-    <small className="signal-lag-note">Targets and ratings are third-party opinions, not TIDE forecasts. Snapshot dated {shortDate(analyst.asOf)}.</small>
+    <small className="signal-lag-note">Targets and ratings are third-party opinions, not product forecasts. Snapshot dated {shortDate(analyst.asOf)}.</small>
   </section>;
 }
 

@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { AnalyzedStock } from "@/src/domain/stock";
+import type { StockSummary } from "@/src/domain/stock";
 import { formatCompactCurrency, formatPercent } from "@/src/domain/analytics";
 import { MetricCard, ScoreDial, StockMark, Tag } from "@/src/components/ui";
 
-export function ValuationLab({ stocks, initialSymbol, onSelect }: { stocks: AnalyzedStock[]; initialSymbol: string; onSelect: (symbol: string) => void }) {
+export function ValuationLab({ stocks, initialSymbol, onSelect }: { stocks: StockSummary[]; initialSymbol: string; onSelect: (symbol: string) => void }) {
   const [symbol, setSymbol] = useState(initialSymbol || stocks[0]?.symbol || "");
   const [growth, setGrowth] = useState(8);
   const [discount, setDiscount] = useState(10);
@@ -65,7 +65,7 @@ function RangeControl({ label, value, minimum, maximum, step, onChange }: { labe
   return <label className="range-field range-field--valuation"><span><b>{label}</b><input className="range-number" type="number" aria-label={`${label} exact value`} min={minimum} max={maximum} step={step} value={value} onChange={(event) => onChange(Math.min(maximum, Math.max(minimum, Number(event.target.value))))} /></span><input type="range" min={minimum} max={maximum} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /><small><span>{minimum}%</span><span>{maximum}%</span></small></label>;
 }
 
-function calculateDcf(stock: AnalyzedStock, growth: number, discount: number, terminalGrowth: number) {
+function calculateDcf(stock: StockSummary, growth: number, discount: number, terminalGrowth: number) {
   const baseFcf = Math.max(1, stock.latestAnnual?.freeCashFlow ?? stock.latestAnnual?.netIncome ?? 1);
   const discountRate = discount / 100;
   const terminalRate = Math.min(terminalGrowth / 100, discountRate - .005);

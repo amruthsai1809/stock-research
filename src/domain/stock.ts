@@ -71,13 +71,16 @@ export type Stock = {
   annuals: AnnualFinancials[];
 };
 
+export type MarketSources = {
+  prices: string;
+  fundamentals: string;
+  universe?: string;
+};
+
 export type MarketDataset = {
   generatedAt: string;
   priceAsOf: string | null;
-  sources: {
-    prices: string;
-    fundamentals: string;
-  };
+  sources: MarketSources;
   stocks: Stock[];
 };
 
@@ -115,4 +118,38 @@ export type AnalyzedStock = Stock & {
   liabilityRatio: number | null;
   shareChange: number | null;
   why: string[];
+};
+
+/**
+ * The compact, eagerly loaded representation used by discovery, filtering,
+ * scoring, and search. Daily prices deliberately live in a separate file per
+ * security so adding years or symbols does not inflate application startup.
+ */
+export type ResearchStock = Omit<AnalyzedStock, "prices" | "annuals">;
+
+export type StockSummary = ResearchStock & {
+  dataPath: string;
+  recentDataPath: string;
+  priceAsOf: string;
+  historyStart: string;
+  historySessions: number;
+  marketCap: number | null;
+  securityType: "common-stock" | "adr";
+};
+
+export type MarketIndex = {
+  schemaVersion: 2;
+  generatedAt: string;
+  priceAsOf: string | null;
+  sources: MarketSources;
+  universe: {
+    exchanges: string[];
+    minimumMarketCap: number;
+    securityTypes: Array<StockSummary["securityType"]>;
+    historyYears: number;
+    eligibleCount: number;
+    publishedCount: number;
+    scope: "full" | "sample";
+  };
+  stocks: StockSummary[];
 };

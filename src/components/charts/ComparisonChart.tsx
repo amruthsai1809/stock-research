@@ -5,11 +5,10 @@ import { ColorType, CrosshairMode, LineSeries, LineStyle, createChart, type Busi
 import type { AnalyzedStock, PricePoint } from "@/src/domain/stock";
 import { priceRangeLabel, selectPriceRange, type PriceRangeKey } from "@/src/domain/priceRange";
 
-type CompareRange = Extract<PriceRangeKey, "3M" | "1Y" | "3Y" | "5Y">;
+export type CompareRange = Extract<PriceRangeKey, "3M" | "1Y" | "3Y" | "5Y" | "10Y">;
 
-export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: AnalyzedStock }) {
+export function ComparisonChart({ left, right, range, onRangeChange }: { left: AnalyzedStock; right: AnalyzedStock; range: CompareRange; onRangeChange: (range: CompareRange) => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const [range, setRange] = useState<CompareRange>("1Y");
   const [theme, setTheme] = useState("light");
   const [hover, setHover] = useState<{ date: string; left: number | null; right: number | null; context: string } | null>(null);
   const [renderedRange, setRenderedRange] = useState<{ start: string; end: string } | null>(null);
@@ -105,7 +104,7 @@ export function ComparisonChart({ left, right }: { left: AnalyzedStock; right: A
           <b className="comparison-live__right"><i />{right.symbol} {formatReturn(active.right)}</b>
           {spread != null && <small>{Math.abs(spread).toFixed(1)} point lead</small>}
         </div>
-        <div className="chart-range" aria-label="Comparison period">{(["3M", "1Y", "3Y", "5Y"] as CompareRange[]).map((item) => <button key={item} className={range === item ? "is-active" : ""} aria-pressed={range === item} onClick={() => { setHover(null); setRange(item); }}>{item}</button>)}</div>
+        <div className="chart-range" aria-label="Comparison period">{(["3M", "1Y", "3Y", "5Y", "10Y"] as CompareRange[]).map((item) => <button key={item} className={range === item ? "is-active" : ""} aria-pressed={range === item} onClick={() => { setHover(null); onRangeChange(item); }}>{item}</button>)}</div>
       </div>
       <div className="chart-period-readout" data-chart-range={range} data-range-start={commonStart} data-range-end={leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? ""} data-rendered-start={renderedRange?.start ?? ""} data-rendered-end={renderedRange?.end ?? ""} data-session-count={Math.min(leftVisible.length, rightVisible.length)}><b>{range}</b><span>{priceRangeLabel(leftVisible.length <= rightVisible.length ? leftVisible : rightVisible)}</span><em className={coversSelectedRange(renderedRange, commonStart, leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? "") ? "is-complete" : ""}>{coversSelectedRange(renderedRange, commonStart, leftVisible.at(-1)?.date ?? rightVisible.at(-1)?.date ?? "") ? "Full selected history" : "Zoomed view"}</em></div>
       <div ref={hostRef} className="chart-stage" role="group" aria-label={`Interactive normalized price performance for ${left.name} and ${right.name}. Move the pointer for exact returns.`} />

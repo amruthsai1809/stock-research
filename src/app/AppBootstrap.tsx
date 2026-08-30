@@ -1,8 +1,8 @@
 "use client";
 
 import { appServices } from "@/src/app/composition/services";
-import { TideApp } from "@/src/features/shell/TideApp";
+import { ResearchApp } from "@/src/features/shell/TideApp";
 
 export function AppBootstrap() {
-  return <TideApp services={appServices} />;
+  return <ResearchApp services={appServices} />;
 }

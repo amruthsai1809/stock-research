@@ -79,7 +79,7 @@ select { color: var(--ink); background: var(--surface); }
 .sidebar { background: var(--nav); color: #eef2ec; width: 236px; min-height: 100vh; padding: 25px 18px 18px; position: fixed; inset: 0 auto 0 0; display: flex; flex-direction: column; z-index: 30; border-right: 1px solid rgba(255,255,255,.06); }
 .brand, .mobile-brand { border: 0; background: transparent; color: inherit; display: flex; align-items: center; text-align: left; cursor: pointer; }
 .brand { gap: 11px; padding: 0 8px 27px; border-bottom: 1px solid rgba(255,255,255,.09); }
-.brand__mark { width: 34px; height: 34px; border-radius: 9px 9px 9px 2px; background: var(--coral); color: #fff; display: inline-grid; place-items: center; font-weight: 800; font-size: 19px; box-shadow: inset 0 -3px 0 rgba(0,0,0,.1); }
+.brand__mark { width: 34px; height: 34px; border-radius: 9px 9px 9px 2px; background: var(--coral); color: #102029; display: inline-grid; place-items: center; font-weight: 800; font-size: 19px; box-shadow: inset 0 -3px 0 rgba(0,0,0,.1); }
 .brand b { display: block; font-size: 18px; letter-spacing: .12em; line-height: 1.1; }
 .brand small { color: var(--nav-muted); display: block; margin-top: 3px; }
 .primary-nav, .sidebar-section { display: flex; flex-direction: column; gap: 4px; }
@@ -269,6 +269,11 @@ select { color: var(--ink); background: var(--surface); }
 .data-table tbody tr { cursor: pointer; transition: background .15s ease; }
 .data-table tbody tr:hover, .data-table tbody tr.is-selected { background: var(--surface-muted); }
 .data-table tbody tr:last-child td { border-bottom: 0; }
+.table-pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 4px 2px; color: var(--ink-muted); font-size: 12px; }
+.table-pagination > div { display: flex; align-items: center; gap: 10px; }
+.table-pagination button { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); padding: 7px 11px; cursor: pointer; }
+.table-pagination button:disabled { cursor: not-allowed; opacity: .45; }
+.table-pagination b { min-width: 54px; text-align: center; color: var(--ink); }
 .watch-button { border: 0; background: transparent; color: var(--ink-faint); font-size: 17px; cursor: pointer; }
 .watch-button.is-active { color: #d2902e; }
 .signal-inspector { position: sticky; top: 127px; }

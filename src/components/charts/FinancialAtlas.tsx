@@ -13,7 +13,7 @@ import {
 const pulseMetrics: FinancialMetricKey[] = ["revenue", "netIncome", "freeCashFlow", "dilutedEps"];
 
 export function FinancialAtlas({ annuals, companyName }: { annuals: AnnualFinancials[]; companyName: string }) {
-  const periods = useMemo(() => annuals.slice(-6), [annuals]);
+  const periods = useMemo(() => annuals.slice(-10), [annuals]);
   return (
     <div className="financial-atlas" data-company={companyName}>
       <div className="financial-atlas__intro">

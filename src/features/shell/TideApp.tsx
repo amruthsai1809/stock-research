@@ -1,12 +1,13 @@
 "use client";
 
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { ApplicationServices } from "@/src/application/ports/repositories";
-import type { AnalyzedStock, MarketDataset } from "@/src/domain/stock";
-import { analyzeUniverse } from "@/src/domain/analytics";
+import type { MarketIndex, StockSummary } from "@/src/domain/stock";
 import { StockMark, Tag } from "@/src/components/ui";
 import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
 import { navigation, readSymbol, readView, writeView, type AppView } from "@/src/features/shell/navigation";
+import { useStockDetail } from "@/src/features/market/useStockDetails";
+import { product } from "@/src/config/product";
 
 const Discover = lazy(() => import("@/src/features/discover/Discover").then((module) => ({ default: module.Discover })));
 const DipFinder = lazy(() => import("@/src/features/dip-finder/DipFinder").then((module) => ({ default: module.DipFinder })));
@@ -20,11 +21,11 @@ const InstitutionalHoldings = lazy(() => import("@/src/features/institutional/In
 const GovernmentInvestments = lazy(() => import("@/src/features/government/GovernmentInvestments").then((module) => ({ default: module.GovernmentInvestments })));
 const StockIntelligence = lazy(() => import("@/src/modules/stock-intelligence/presentation/StockIntelligence").then((module) => ({ default: module.StockIntelligence })));
 
-export function TideApp({ services }: { services: ApplicationServices }) {
-  const [dataset, setDataset] = useState<MarketDataset | null>(null);
+export function ResearchApp({ services }: { services: ApplicationServices }) {
+  const [dataset, setDataset] = useState<MarketIndex | null>(null);
   const [researchSignals, setResearchSignals] = useState<ResearchSignalDataset | null>(null);
   const [dataError, setDataError] = useState(false);
-  const stocks = useMemo(() => analyzeUniverse(dataset?.stocks ?? []), [dataset]);
+  const stocks = dataset?.stocks ?? [];
   const [view, setView] = useState<AppView>(readView);
   const [selectedSymbol, setSelectedSymbol] = useState(() => readSymbol("AAPL"));
   const [watchlist, setWatchlist] = useState<string[]>(readWatchlist);
@@ -32,10 +33,11 @@ export function TideApp({ services }: { services: ApplicationServices }) {
   const [watchlistOpen, setWatchlistOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(readTheme);
   const selectedStock = stocks.find((stock) => stock.symbol === selectedSymbol) ?? stocks[0];
+  const selectedDetail = useStockDetail(services.marketRepository, view === "company" ? selectedStock?.symbol : undefined);
 
   useEffect(() => {
     let active = true;
-    services.marketRepository.load().then((payload) => { if (active) setDataset(payload); }).catch(() => { if (active) setDataError(true); });
+    services.marketRepository.loadIndex().then((payload) => { if (active) setDataset(payload); }).catch(() => { if (active) setDataError(true); });
     return () => { active = false; };
   }, [services]);
 
@@ -47,7 +49,7 @@ export function TideApp({ services }: { services: ApplicationServices }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("tide-theme", theme);
+    localStorage.setItem(product.storage.theme, theme);
   }, [theme]);
 
   useEffect(() => {
@@ -92,7 +94,7 @@ export function TideApp({ services }: { services: ApplicationServices }) {
   const toggleWatchlist = (symbol: string) => {
     setWatchlist((current) => {
       const next = current.includes(symbol) ? current.filter((item) => item !== symbol) : [...current, symbol];
-      localStorage.setItem("tide-watchlist", JSON.stringify(next));
+      localStorage.setItem(product.storage.watchlist, JSON.stringify(next));
       return next;
     });
   };
@@ -101,7 +103,7 @@ export function TideApp({ services }: { services: ApplicationServices }) {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <button className="brand" onClick={() => navigate("discover")} aria-label="TIDE home"><span className="brand__mark">T</span><span><b>TIDE</b><small>Equity research</small></span></button>
+      <button className="brand" onClick={() => navigate("discover")} aria-label={`${product.name} home`}><span className="brand__mark">{product.mark}</span><span><b>{product.name}</b><small>Equity research</small></span></button>
       <nav className="primary-nav" aria-label="Primary navigation">
         <span className="nav-label">Research</span>
         {navigation.filter((item) => item.section === "Research").map((item) => <button key={item.id} className={view === item.id || (item.id === "discover" && view === "company") ? "is-active" : ""} onClick={() => navigate(item.id)}><span>{item.glyph}</span>{item.label}{item.id === "dips" && <em>{stocks.filter((stock) => stock.drawdown52Week < -15).length}</em>}</button>)}
@@ -119,7 +121,7 @@ export function TideApp({ services }: { services: ApplicationServices }) {
 
     <div className="app-main">
       <header className="topbar">
-        <button className="mobile-brand" onClick={() => navigate("discover")}><span className="brand__mark">T</span>TIDE</button>
+        <button className="mobile-brand" onClick={() => navigate("discover")}><span className="brand__mark">{product.mark}</span>{product.shortName}</button>
         <button className="search-trigger" onClick={() => setSearchOpen(true)}><span>⌕</span><span>Search any company or ticker</span><kbd>⌘ K</kbd></button>
         <div className="topbar__actions">
           <div className="as-of"><span className="live-dot" /><span><b>End-of-day data</b><small>As of {formatDate(dataset.priceAsOf)}</small></span></div>
@@ -131,20 +133,21 @@ export function TideApp({ services }: { services: ApplicationServices }) {
       <div className="data-banner"><span>Research snapshot</span><p>End-of-day prices and official filings · No login · No paid data service · Not investment advice</p><button onClick={() => navigate("filings")}>Inspect sources →</button></div>
 
       <main className="content"><Suspense fallback={<FeatureLoading />}>
-        {view === "discover" && <Discover stocks={stocks} onSelect={selectStock} onOpenDipFinder={() => navigate("dips")} />}
-        {view === "dips" && <DipFinder stocks={stocks} onSelect={selectStock} watchlist={watchlist} onToggleWatchlist={toggleWatchlist} />}
-        {view === "company" && selectedStock && <CompanyResearch stock={selectedStock} researchSignal={researchSignals?.signals[selectedStock.symbol]} isWatched={watchlist.includes(selectedStock.symbol)} onToggleWatchlist={toggleWatchlist} onOpenValuation={() => navigate("valuation")} />}
+        {view === "discover" && <Discover stocks={stocks} onSelect={selectStock} onOpenDipFinder={() => navigate("dips")} marketRepository={services.marketRepository} />}
+        {view === "dips" && <DipFinder stocks={stocks} onSelect={selectStock} watchlist={watchlist} onToggleWatchlist={toggleWatchlist} marketRepository={services.marketRepository} />}
+        {view === "company" && selectedDetail.stock && <CompanyResearch stock={selectedDetail.stock} researchSignal={researchSignals?.signals[selectedDetail.stock.symbol]} isWatched={watchlist.includes(selectedDetail.stock.symbol)} onToggleWatchlist={toggleWatchlist} onOpenValuation={() => navigate("valuation")} />}
+        {view === "company" && !selectedDetail.stock && <DetailLoading error={selectedDetail.error} />}
         {view === "screener" && <Screener stocks={stocks} onSelect={selectStock} />}
-        {view === "compare" && <Compare stocks={stocks} onSelect={selectStock} />}
+        {view === "compare" && <Compare stocks={stocks} onSelect={selectStock} marketRepository={services.marketRepository} />}
         {view === "valuation" && <ValuationLab stocks={stocks} initialSymbol={selectedSymbol} onSelect={selectStock} />}
         {view === "filings" && <FilingIntel stocks={stocks} onSelect={selectStock} />}
         {view === "signals" && <StockIntelligence stocks={stocks} repository={services.researchSignalRepository} onSelect={selectStock} />}
-        {view === "portfolio" && <PortfolioLab stocks={stocks} onSelect={selectStock} benchmarkRepository={services.benchmarkRepository} />}
+        {view === "portfolio" && <PortfolioLab stocks={stocks} onSelect={selectStock} benchmarkRepository={services.benchmarkRepository} marketRepository={services.marketRepository} />}
         {view === "institutional" && <InstitutionalHoldings onSelect={selectStock} repository={services.institutionalRepository} />}
         {view === "government" && <GovernmentInvestments onSelect={selectStock} repository={services.governmentRepository} />}
       </Suspense></main>
 
-      <footer className="site-footer"><span><b>TIDE</b> · Open-source equity research</span><span>Data as of {formatDate(dataset.priceAsOf)} · Not investment advice</span></footer>
+      <footer className="site-footer"><span><b>{product.name}</b> · Open-source equity research</span><span>Data as of {formatDate(dataset.priceAsOf)} · Not investment advice</span></footer>
     </div>
 
     <nav className="mobile-nav" aria-label="Mobile navigation">{navigation.map((item) => <button key={item.id} className={view === item.id ? "is-active" : ""} onClick={() => navigate(item.id)}><span>{item.glyph}</span><small>{item.shortLabel}</small></button>)}</nav>
@@ -154,25 +157,29 @@ export function TideApp({ services }: { services: ApplicationServices }) {
 }
 
 function ProductLoading({ failed }: { failed: boolean }) {
-  return <main className="product-loading"><div className="product-loading__brand"><span className="brand__mark">T</span><b>TIDE</b></div>{failed ? <><h1>Research data could not be loaded.</h1><p>Check your connection and refresh the page.</p><button className="primary-button" onClick={() => window.location.reload()}>Try again</button></> : <><div className="product-loading__pulse"><i /><i /><i /></div><h1>Preparing the research desk</h1><p>Loading end-of-day prices and SEC-derived fundamentals…</p></>}</main>;
+  return <main className="product-loading"><div className="product-loading__brand"><span className="brand__mark">{product.mark}</span><b>{product.name}</b></div>{failed ? <><h1>Research data could not be loaded.</h1><p>Check your connection and refresh the page.</p><button className="primary-button" onClick={() => window.location.reload()}>Try again</button></> : <><div className="product-loading__pulse"><i /><i /><i /></div><h1>Preparing the research desk</h1><p>Loading the compact market index and SEC-derived fundamentals…</p></>}</main>;
 }
 
 function FeatureLoading() {
   return <section className="panel feature-loading" aria-live="polite" aria-busy="true"><span /><div><b>Opening research workspace</b><small>Loading only the tools needed for this view.</small></div></section>;
 }
 
-function SearchDialog({ stocks, onSelect, onClose }: { stocks: AnalyzedStock[]; onSelect: (symbol: string) => void; onClose: () => void }) {
+function DetailLoading({ error }: { error: string | null }) {
+  return <section className="panel feature-loading" aria-live="polite" aria-busy={!error}><span /><div><b>{error ? "Company history could not be loaded" : "Opening company research"}</b><small>{error ?? "Fetching this company’s ten-year price file."}</small></div></section>;
+}
+
+function SearchDialog({ stocks, onSelect, onClose }: { stocks: StockSummary[]; onSelect: (symbol: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const results = stocks.filter((stock) => `${stock.symbol} ${stock.name} ${stock.sector}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8);
   return <div className="modal-backdrop" onMouseDown={onClose}><section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search companies" onMouseDown={(event) => event.stopPropagation()}><div className="search-dialog__input"><span>⌕</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ticker, company, or sector…" /><kbd>ESC</kbd></div><div className="search-dialog__hint"><span>Companies</span><small>{results.length} results</small></div><div className="search-results">{results.map((stock, index) => <button key={stock.symbol} onClick={() => onSelect(stock.symbol)}><StockMark symbol={stock.symbol} /><span><b>{stock.symbol}</b><small>{stock.name} · {stock.sector}</small></span><Tag tone={stock.drawdown52Week < -15 ? "warn" : "neutral"}>{stock.drawdown52Week.toFixed(1)}% from high</Tag><kbd>{index + 1}</kbd></button>)}</div><div className="search-dialog__footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open research</span><span>Search runs locally</span></div></section></div>;
 }
 
-function WatchlistDrawer({ stocks, symbols, onSelect, onToggle, onClose }: { stocks: AnalyzedStock[]; symbols: string[]; onSelect: (symbol: string) => void; onToggle: (symbol: string) => void; onClose: () => void }) {
-  const watched = symbols.map((symbol) => stocks.find((stock) => stock.symbol === symbol)).filter(Boolean) as AnalyzedStock[];
+function WatchlistDrawer({ stocks, symbols, onSelect, onToggle, onClose }: { stocks: StockSummary[]; symbols: string[]; onSelect: (symbol: string) => void; onToggle: (symbol: string) => void; onClose: () => void }) {
+  const watched = symbols.map((symbol) => stocks.find((stock) => stock.symbol === symbol)).filter(Boolean) as StockSummary[];
   return <div className="drawer-backdrop" onMouseDown={onClose}><aside className="watchlist-drawer" onMouseDown={(event) => event.stopPropagation()}><div className="drawer-header"><div><span className="eyebrow">Local workspace</span><h2>Your watchlist</h2></div><button onClick={onClose} aria-label="Close watchlist">×</button></div>{watched.length ? <div className="drawer-list">{watched.map((stock) => <article key={stock.symbol}><button className="company-cell" onClick={() => onSelect(stock.symbol)}><StockMark symbol={stock.symbol} /><span><b>{stock.symbol}</b><small>{stock.name}</small></span></button><div><b>${stock.latestPrice.toFixed(2)}</b><small className={stock.drawdown52Week < 0 ? "negative" : "positive"}>{stock.drawdown52Week.toFixed(1)}% from high</small></div><button className="watch-button is-active" onClick={() => onToggle(stock.symbol)} aria-label={`Remove ${stock.symbol}`}>★</button></article>)}</div> : <div className="drawer-empty"><span>☆</span><h3>Build your research queue</h3><p>Add companies from Dip Finder or any company page. Everything stays on this device.</p><button className="primary-button" onClick={onClose}>Explore companies</button></div>}<div className="drawer-footer"><span>Stored only in this browser</span><button onClick={() => downloadWatchlist(symbols)}>Export JSON ↓</button></div></aside></div>;
 }
 
-function downloadWatchlist(symbols: string[]) { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), symbols }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "tide-watchlist.json"; anchor.click(); URL.revokeObjectURL(url); }
+function downloadWatchlist(symbols: string[]) { const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), symbols }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "stock-research-watchlist.json"; anchor.click(); URL.revokeObjectURL(url); }
 function formatDate(value: string | null) { if (!value) return "Unavailable"; return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
-function readWatchlist(): string[] { if (typeof window === "undefined") return []; try { const saved: unknown = JSON.parse(localStorage.getItem("tide-watchlist") || "[]"); return Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string") : []; } catch { return []; } }
-function readTheme(): "light" | "dark" { if (typeof window === "undefined") return "light"; return localStorage.getItem("tide-theme") === "dark" ? "dark" : "light"; }
+function readWatchlist(): string[] { if (typeof window === "undefined") return []; try { const saved: unknown = JSON.parse(localStorage.getItem(product.storage.watchlist) ?? localStorage.getItem(product.legacyStorage.watchlist) ?? "[]"); return Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string") : []; } catch { return []; } }
+function readTheme(): "light" | "dark" { if (typeof window === "undefined") return "light"; return (localStorage.getItem(product.storage.theme) ?? localStorage.getItem(product.legacyStorage.theme)) === "dark" ? "dark" : "light"; }

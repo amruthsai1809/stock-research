@@ -112,7 +112,7 @@ function FinancialStatements({ stock }: { stock: AnalyzedStock }) {
     { label: "Capital expenditure", key: "capex" },
     { label: "Free cash flow", key: "freeCashFlow", parent: true },
   ];
-  const annuals = stock.annuals.slice(-6);
+  const annuals = stock.annuals.slice(-10);
   const display = (row: typeof rows[number], annual: AnnualFinancials, index: number) => {
     const value = annual[row.key] as number | null;
     if (mode === "value") return formatCompactCurrency(value);

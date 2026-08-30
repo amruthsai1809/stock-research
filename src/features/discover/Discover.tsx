@@ -1,17 +1,20 @@
 "use client";
 
-import type { AnalyzedStock } from "@/src/domain/stock";
+import type { MarketRepository } from "@/src/application/ports/repositories";
+import type { StockSummary } from "@/src/domain/stock";
 import { Change, MetricCard, ScoreDial, StockMark, Tag } from "@/src/components/ui";
 import { InteractivePriceChart } from "@/src/components/charts/InteractivePriceChart";
 import { formatCompactCurrency, formatPercent } from "@/src/domain/analytics";
+import { useStockDetail } from "@/src/features/market/useStockDetails";
 
-export function Discover({ stocks, onSelect, onOpenDipFinder }: { stocks: AnalyzedStock[]; onSelect: (symbol: string) => void; onOpenDipFinder: () => void }) {
+export function Discover({ stocks, onSelect, onOpenDipFinder, marketRepository }: { stocks: StockSummary[]; onSelect: (symbol: string) => void; onOpenDipFinder: () => void; marketRepository: MarketRepository }) {
   const ranked = [...stocks].sort((a, b) => b.dipScore - a.dipScore);
   const quality = [...stocks].sort((a, b) => b.qualityScore - a.qualityScore).slice(0, 5);
   const dips = [...stocks].sort((a, b) => a.drawdown52Week - b.drawdown52Week).slice(0, 4);
   const positiveFcf = stocks.filter((stock) => (stock.latestAnnual?.freeCashFlow ?? 0) > 0).length;
   const averageDrawdown = stocks.reduce((total, stock) => total + stock.drawdown52Week, 0) / Math.max(1, stocks.length);
   const best = ranked[0];
+  const bestDetail = useStockDetail(marketRepository, best?.symbol);
 
   return (
     <div className="view-stack">
@@ -31,7 +34,7 @@ export function Discover({ stocks, onSelect, onOpenDipFinder }: { stocks: Analyz
         <MetricCard label="Universe drawdown" value={formatPercent(averageDrawdown)} detail="average from 52W high" accent="coral" />
         <MetricCard label="Positive FCF" value={`${Math.round((positiveFcf / Math.max(1, stocks.length)) * 100)}%`} detail={`${positiveFcf} of ${stocks.length} companies`} accent="green" />
         <MetricCard label="Top quality" value={`${quality[0]?.qualityScore ?? 0}/100`} detail={quality[0]?.name ?? "-"} accent="blue" />
-        <MetricCard label="Coverage" value={`${stocks.length} stocks`} detail="5Y prices + SEC annuals" />
+        <MetricCard label="Coverage" value={`${stocks.length} stocks`} detail="10Y prices or complete post-IPO history" />
       </section>
 
       <div className="desk-grid">
@@ -41,7 +44,9 @@ export function Discover({ stocks, onSelect, onOpenDipFinder }: { stocks: Analyz
               <div><span className="eyebrow">Highest-ranked setup</span><h2>{best.name} <small>{best.symbol}</small></h2><p>{best.classification} with a {best.qualityScore}/100 business-quality score.</p></div>
               <ScoreDial value={best.dipScore} label="dip score" />
             </div>
-            <InteractivePriceChart prices={best.prices} symbol={best.symbol} name={best.name} height={250} compact initialRange="1Y" />
+            {bestDetail.stock
+              ? <InteractivePriceChart prices={bestDetail.stock.prices} symbol={best.symbol} name={best.name} height={250} compact initialRange="1Y" />
+              : <div className="chart-empty" aria-live="polite"><b>{bestDetail.error ? "Price history unavailable" : "Loading price history"}</b><span>{bestDetail.error ?? "Fetching this company only."}</span></div>}
             <div className="spotlight-actions">
               <span><small>52W drawdown</small><Change value={best.drawdown52Week} /></span>
               <span><small>Revenue growth</small><Change value={best.revenueGrowth} /></span>

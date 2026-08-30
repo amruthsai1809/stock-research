@@ -12,15 +12,15 @@ async function render() {
   );
 }
 
-test("renders the TIDE application shell", async () => {
+test("renders the neutral Stock Research application shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>TIDE — Evidence-first equity research<\/title>/i);
-  assert.match(html, /TIDE — Evidence before opinion/i);
-  assert.match(html, /tide-equity-research\.amruthsai1809\.chatgpt\.site/i);
+  assert.match(html, /<title>Stock Research — Evidence-first equity research<\/title>/i);
+  assert.match(html, /Stock Research — Evidence before opinion/i);
+  assert.match(html, /https:\/\/amruthg\.com/i);
   assert.match(html, /Preparing the research desk/);
-  assert.match(html, /Loading end-of-day prices and SEC-derived fundamentals/);
+  assert.match(html, /Loading the compact market index and SEC-derived fundamentals/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });

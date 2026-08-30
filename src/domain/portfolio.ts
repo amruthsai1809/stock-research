@@ -344,7 +344,7 @@ export function parseBrokerPdfText(text: string, source: string): PortfolioParse
     if (!date || (!symbol && !["deposit", "withdrawal"].includes(type))) return;
     transactions.push({ id: `${source}-pdf-${index}-${date}`, date, type, symbol, quantity, price, amount, fees: 0, source, description: row.trim().slice(0, 180) });
   });
-  if (!transactions.length) warnings.push("No compatible transaction rows were found in this PDF. A CSV, QFX/OFX, QIF, or TIDE JSON export will be more reliable.");
+  if (!transactions.length) warnings.push("No compatible transaction rows were found in this PDF. A CSV, QFX/OFX, QIF, or Stock Research JSON export will be more reliable.");
   else warnings.push("PDF extraction is best effort. Review the parsed ledger before relying on the analysis.");
   return { transactions, warnings, format: "pdf-text" };
 }

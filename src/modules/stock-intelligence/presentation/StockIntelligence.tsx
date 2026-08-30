@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ResearchSignalRepository } from "@/src/application/ports/repositories";
-import type { AnalyzedStock } from "@/src/domain/stock";
+import type { StockSummary } from "@/src/domain/stock";
 import { StockMark, Tag } from "@/src/components/ui";
 import { BrowserAiMemoGateway, buildEvidencePacket, buildLocalMemo } from "../application/aiMemoGateway";
 import { intelligenceStrategies } from "../domain/scoring";
@@ -15,7 +15,7 @@ const providerModels: Record<AiProviderId, string> = {
   gemini: "gemini-3.6-flash",
 };
 
-export function StockIntelligence({ stocks, repository, onSelect }: { stocks: AnalyzedStock[]; repository: ResearchSignalRepository; onSelect: (symbol: string) => void }) {
+export function StockIntelligence({ stocks, repository, onSelect }: { stocks: StockSummary[]; repository: ResearchSignalRepository; onSelect: (symbol: string) => void }) {
   const vm = useStockIntelligence(stocks, repository);
   const [query, setQuery] = useState("");
   const [universeView, setUniverseView] = useState<"ranked" | "opportunity" | "confidence">("ranked");
@@ -107,7 +107,7 @@ function AiResearchPanel({ score }: { score: StockIntelligenceScore }) {
     <div className="panel-heading"><div><span className="eyebrow">AI research editor</span><h2>Interpretation, grounded in the score</h2><p>The score is always computed locally. AI receives only the visible evidence packet and writes a memo.</p></div><Tag tone={selectedMemo.provider === "local" ? "neutral" : "blue"}>{selectedMemo.provider === "local" ? "Local explanation" : `${selectedMemo.provider} · ${selectedMemo.model}`}</Tag></div>
     <div className="ai-memo"><div className="ai-memo__lead"><span className="ai-orbit">AI</span><div><h3>{selectedMemo.headline}</h3><p>{selectedMemo.summary}</p></div></div><div className="ai-case-grid"><MemoList title="Supportive evidence" items={selectedMemo.bullCase} tone="positive" /><MemoList title="Counter-evidence" items={selectedMemo.bearCase} tone="negative" /><MemoList title="What to verify next" items={selectedMemo.watchItems} tone="neutral" /></div><div className="ai-verdict"><span>Research verdict</span><p>{selectedMemo.verdict}</p></div></div>
     <div className="ai-actions"><button className="primary-button" onClick={() => setSettingsOpen((value) => !value)}>{settingsOpen ? "Close AI setup" : "Generate with my AI key"}</button><button className="secondary-button" onClick={() => { setMemo(buildLocalMemo(score)); setMemoKey(currentKey); }}>Use local explanation</button><small>Local mode is free and sends nothing.</small></div>
-    {settingsOpen && <div className="ai-settings"><div className="ai-security"><b>Your key is held in memory only.</b><p>It is sent directly from this tab to the provider when you click Generate. TIDE never stores it, but browser-side keys carry more exposure than a backend proxy. Use a restricted, low-limit key and revoke it after use.</p></div><div className="provider-tabs">{(["openai", "anthropic", "gemini"] as const).map((item) => <button key={item} className={provider === item ? "is-active" : ""} onClick={() => chooseProvider(item)}>{item}</button>)}</div><label><span>API key</span><input type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={`Paste ${provider} key`} /></label><label><span>Model ID</span><input value={model} onChange={(event) => setModel(event.target.value)} /></label><details><summary>Exactly what will be sent</summary><pre>{JSON.stringify(buildEvidencePacket(score), null, 2)}</pre></details>{error && <p className="ai-error" role="alert">{error}</p>}<button className="primary-button" disabled={status === "loading" || !apiKey.trim()} onClick={() => void generate()}>{status === "loading" ? "Writing evidence memo…" : "Generate research memo"}</button></div>}
+    {settingsOpen && <div className="ai-settings"><div className="ai-security"><b>Your key is held in memory only.</b><p>It is sent directly from this tab to the provider when you click Generate. This product never stores it, but browser-side keys carry more exposure than a backend proxy. Use a restricted, low-limit key and revoke it after use.</p></div><div className="provider-tabs">{(["openai", "anthropic", "gemini"] as const).map((item) => <button key={item} className={provider === item ? "is-active" : ""} onClick={() => chooseProvider(item)}>{item}</button>)}</div><label><span>API key</span><input type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={`Paste ${provider} key`} /></label><label><span>Model ID</span><input value={model} onChange={(event) => setModel(event.target.value)} /></label><details><summary>Exactly what will be sent</summary><pre>{JSON.stringify(buildEvidencePacket(score), null, 2)}</pre></details>{error && <p className="ai-error" role="alert">{error}</p>}<button className="primary-button" disabled={status === "loading" || !apiKey.trim()} onClick={() => void generate()}>{status === "loading" ? "Writing evidence memo…" : "Generate research memo"}</button></div>}
   </section>;
 }
 
@@ -115,4 +115,4 @@ function MemoList({ title, items, tone }: { title: string; items: string[]; tone
 function shortDate(value: string | null) { if (!value) return "Unavailable"; return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
 function signedPct(value: number) { return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`; }
 function compactMoney(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(value); }
-function downloadEvidence(score: StockIntelligenceScore) { const blob = new Blob([JSON.stringify(buildEvidencePacket(score), null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${score.symbol.toLowerCase()}-tide-evidence.json`; anchor.click(); URL.revokeObjectURL(url); }
+function downloadEvidence(score: StockIntelligenceScore) { const blob = new Blob([JSON.stringify(buildEvidencePacket(score), null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${score.symbol.toLowerCase()}-research-evidence.json`; anchor.click(); URL.revokeObjectURL(url); }

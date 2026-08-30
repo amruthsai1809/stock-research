@@ -1,52 +1,64 @@
-# TIDE
+# Stock Research
 
-**A source-first equity research workbench for finding resilient businesses inside meaningful drawdowns.**
+> Working product name. Brand and final `amruthg.com` subdomain are intentionally centralized and deferred.
 
-TIDE is public, login-free, and designed for static hosting. It combines five years of end-of-day market history with normalized SEC and public-disclosure data, then performs analysis locally in the browser.
+An evidence-first, login-free U.S. equity research workbench. The production universe screens Nasdaq, NYSE, and NYSE American securities for a market capitalization of at least $1 billion, includes common shares and ADRs, excludes funds and non-common instruments, and publishes ten years of end-of-day history or the complete available history for newer IPOs.
 
-## Product highlights
+## What it does
 
 - Explainable Dip Finder combining price dislocation with business quality
-- Company research cockpit with interactive OHLC, volume, moving averages, exact date hover, and deterministic “What changed?” insights
-- Stock screener, comparison studio, annual financial explorer, and discounted cash-flow lab
-- Explainable Stock Intelligence with five strategy profiles, factor attribution, confidence, conservative fair value, SEC insider and active-manager 13F signals, evidence export, and an optional BYOK AI research editor
-- Private portfolio import for CSV, QFX/OFX, QIF, JSON, and best-effort PDF, including cash-flow-matched benchmark comparisons
-- Institutional ownership lab with 27 curated managers, 20 quarters of history, source-linked filings, lifecycle detection, share-count changes, and per-position entry/add/trim/exit trails
-- Public-disclosure explorer with 440 searchable congressional and executive filers, 65,000+ normalized transactions, sample-aware performance and activity rankings, activity-derived exposure signals, reporting-delay analysis, and original filing links
-- Responsive layouts, light/dark themes, keyboard-accessible controls, and command-palette search
-- Browser-only watchlists; imported portfolio records remain in memory unless the visitor explicitly exports them
-- Automated static-data validation, runtime contracts, atomic refreshes, weekday refresh workflow, unit coverage, browser regression tests, accessibility checks, and bundle budgets
+- Company research with interactive price/volume charts, 10Y range controls, SEC-derived annuals, and source lineage
+- Screener, two-company comparison, financial explorer, and transparent DCF lab
+- Deterministic Stock Intelligence with selectable strategies, factor attribution, confidence, SEC insider and active-manager evidence, and optional bring-your-own-key AI writing
+- Browser-local portfolio import for CSV, QFX/OFX, QIF, JSON, and best-effort PDF
+- Source-linked 13F history and public-official disclosure research
+- Local watchlists, responsive layouts, light/dark themes, keyboard search, and accessibility checks
+
+DUOL is a required acceptance symbol in the universe and data-quality gates.
+
+## Zero-cost data architecture
+
+The browser does not download every company’s price history at startup:
+
+```text
+Nasdaq screen + SEC identifiers + EOD provider
+                    |
+              scheduled build
+                    |
+     validate + build compact summaries
+                    |
+       Cloudflare Worker + static assets
+          /                    \
+ compact market index     per-symbol files
+ loaded at startup        loaded on demand
+                         /              \
+                  stable archive   current-year delta
+```
+
+- `public/data/market/index.json` contains compact, precomputed summaries for search, sorting, screening, and scores.
+- A selected chart fetches only that symbol’s stable archive and small current-year delta. Requests are validated, cached, and deduplicated by the repository adapter.
+- Production market files are generated in the GitHub Actions workspace, deployed directly to Cloudflare, and ignored by Git. There are no dated daily copies and no automated data commits.
+- Stable file paths let Cloudflare reuse unchanged historical assets. On an ordinary trading day only the index and current-year deltas change.
+- The repository retains a small legacy development fixture so a clean clone can build and test without a network backfill.
+- No R2 bucket, database, login system, or server-owned user data is required.
+
+The current full screen is expected to fluctuate around 2,500–2,600 securities as prices and listings change. The generated index records both the eligible count and published count on every refresh.
 
 ## Architecture
 
-Visitors receive static application assets and dated research snapshots. There is no application database, login system, server-owned user state, or secret in the frontend.
-
-```text
-Scheduled data build                 Static deployment              Visitor browser
-────────────────────                 ─────────────────              ───────────────
-End-of-day prices       ─┐
-SEC company facts       ─┼─ validate ─▶ dated JSON snapshots ─────▶ screening + valuation
-SEC 13F filings         ─┤               HTML / CSS / JS            position histories
-House / Senate / OGE    ─┘                                         disclosure analysis
-Broker export file  ──────────────────────────────────────────────▶ private local analysis
-```
-
-The code is organized by responsibility:
-
 - `src/domain` — typed financial entities and deterministic calculations
-- `src/application/ports` — repository contracts that keep use cases independent of delivery and storage
-- `src/modules/stock-intelligence` — a vertical slice with domain, application, infrastructure-facing contracts, controller, and view
-- `src/app/composition` — the only place concrete browser repositories are assembled
-- `src/features` — product capabilities grouped by user workflow
-- `src/components` — reusable visual and chart primitives
-- `src/infrastructure/repositories` — replaceable static-data access boundaries
-- `scripts` — repeatable ingestion, normalization, lifecycle checks, and validation
-- `public/data` — generated, dated research snapshots
-- `tests` — rendered-output and data-integrity checks
+- `src/application/ports` — repository contracts independent of delivery and storage
+- `src/app/composition` — the only concrete-adapter composition root
+- `src/features` — product capabilities grouped by workflow
+- `src/modules/stock-intelligence` — a vertical slice with domain, application, and presentation boundaries
+- `src/infrastructure/repositories` — runtime-validated static adapters and on-demand history cache
+- `scripts/market` — universe policy and build-time summary generation
+- `scripts` — repeatable ingestion and normalization jobs
+- `tests` — unit, architecture, data-integrity, rendered-output, browser, visual, and accessibility checks
 
-See [Architecture](docs/ARCHITECTURE.md) and [Methodology](docs/METHODOLOGY.md) for details.
+See [Architecture](docs/ARCHITECTURE.md), [Methodology](docs/METHODOLOGY.md), and the [static modular architecture ADR](docs/adr/0001-static-modular-architecture.md).
 
-## Getting started
+## Local development
 
 Requires Node.js 22.13 or newer.
 
@@ -55,48 +67,49 @@ npm ci
 npm run dev
 ```
 
+The checked-in fixture is enough for ordinary development. To create a current local sample, set `MARKET_SYMBOLS` to a comma-separated list before running `npm run data:update`. Omit it for the production-sized universe.
+
 ## Commands
 
 ```bash
-npm run dev                # local development
-npm run data:update        # prices and SEC fundamentals
-npm run data:benchmarks    # SPY, QQQ, and VTI history
-npm run data:intelligence  # institutional and public-disclosure snapshots
-npm run data:government:leaderboard # rebuild ranks from the current local disclosure snapshot
-npm run data:signals       # SEC insider and active-manager ownership signals
-npm run data:update:all    # every generated research snapshot
-npm run typecheck          # strict TypeScript validation
-npm run lint               # static code checks
-npm run build              # production build
-npm run test:unit          # unit tests with enforced coverage thresholds
-npm run test:e2e           # Chromium workflow and accessibility tests
-npm run bundle:check       # reject oversized client chunks
-npm run security:check     # audit production dependencies
-npm test                   # types, unit coverage, build, bundle, and data tests
-npm run quality            # lint plus the full non-browser quality gate
+npm run dev                 # local development server
+npm run data:update         # universe, 10Y prices, and SEC fundamentals
+npm run data:benchmarks     # long SPY, QQQ, and VTI histories
+npm run data:intelligence   # institutional and public-disclosure snapshots
+npm run data:signals        # SEC insider and market-opinion signals
+npm run typecheck           # strict TypeScript validation
+npm run lint                # static code checks
+npm run build               # production Cloudflare build
+npm run test:unit           # unit tests with coverage thresholds
+npm run test:data           # generated-data and architecture contracts
+npm run test:e2e            # real Chromium workflows and accessibility
+npm run bundle:check        # client-asset budgets
+npm run security:check      # production dependency audit
+npm test                    # types, unit coverage, build, bundle, and data
+npm run quality             # complete non-browser quality gate
+npm run deploy:cloudflare   # deploy a validated build with Wrangler
 ```
 
-## Data policy
+## Automation and deployment
+
+`.github/workflows/quality.yml` validates every push and pull request. `.github/workflows/update-market-data.yml` runs after U.S. market days, creates the production data entirely in the ephemeral runner, validates it, builds once, and deploys the result. It requires only `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets; neither is exposed to the client.
+
+The Cloudflare project uses static assets plus the Vinext application Worker. Keep it on the Workers Free plan for a hard no-spend operating boundary. The final custom domain is deliberately not configured until the product name and subdomain are selected.
+
+## Data and privacy policy
 
 - Fundamentals come from SEC EDGAR Company Facts.
-- Institutional positions come from official Form 13F filings and information tables.
-- Public-official activity comes from official House Clerk, Senate eFD, and Office of Government Ethics disclosures, normalized through the MIT-licensed Kadoa pipeline.
-- Prices are dated end-of-day snapshots and are never described as real-time.
-- Missing facts remain missing. TIDE does not turn disclosure ranges into exact values or activity into a claimed live portfolio.
-- Every material institutional or public-official record links to a primary filing.
-- Stock Intelligence is deterministic; an optional user-selected AI provider explains the already-computed evidence and never supplies hidden score inputs.
-- Rankings and inferred exposure signals are research context, not recommendations.
+- The universe joins Nasdaq’s market screen to SEC exchange and CIK identifiers.
+- Prices are end-of-day community data and are never described as real time.
+- Missing source facts remain missing; the product does not manufacture values.
+- Institutional and public-official evidence links to primary filings.
+- Stock Intelligence scoring is deterministic. Optional AI explains an already-computed evidence packet and never supplies hidden score inputs.
+- There is no login. Theme and watchlist preferences are stored locally. Imported portfolio records and optional AI keys remain in memory unless the visitor explicitly exports or sends an evidence packet.
 
-The current price adapter uses Yahoo Finance chart data as a community endpoint. It is isolated in `scripts/update-data.mjs` so it can be replaced without changing the product or domain layers.
+The price and universe adapters are isolated so a licensed or alternative provider can replace them without changing domain or presentation code.
 
-## Privacy
+## License and disclaimer
 
-TIDE has no login. Theme and watchlist preferences are the only values stored in browser local storage. Imported portfolio records and optional AI API keys stay in memory and disappear on refresh. Portfolio files are not transmitted to TIDE; an AI key and the on-screen evidence packet go directly to the selected provider only after the visitor explicitly requests a memo.
+MIT licensed. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
-## License and attribution
-
-TIDE is MIT licensed. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
-
-## Disclaimer
-
-TIDE is an educational research project, not investment advice. Market and filing data can be delayed, incomplete, amended, or corrected. Verify important information against the primary source.
+This is an educational research project, not investment advice. Market and filing data can be delayed, incomplete, amended, or corrected. Verify material decisions against primary sources.

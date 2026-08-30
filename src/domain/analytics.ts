@@ -2,6 +2,7 @@ import type {
   AnalyzedStock,
   AnnualFinancials,
   DipClassification,
+  StockSummary,
   PricePoint,
   Stock,
 } from "./stock";
@@ -188,6 +189,30 @@ export function analyzeStock(stock: Stock): AnalyzedStock {
 
 export function analyzeUniverse(stocks: Stock[]): AnalyzedStock[] {
   return stocks.map(analyzeStock).sort((a, b) => b.dipScore - a.dipScore);
+}
+
+export function summarizeStock(
+  stock: AnalyzedStock,
+  options: {
+    dataPath: string;
+    recentDataPath?: string;
+    marketCap?: number | null;
+    securityType?: StockSummary["securityType"];
+  },
+): StockSummary {
+  const { prices: _prices, annuals: _annuals, ...summary } = stock;
+  void _prices;
+  void _annuals;
+  return {
+    ...summary,
+    dataPath: options.dataPath,
+    recentDataPath: options.recentDataPath ?? options.dataPath,
+    priceAsOf: stock.prices.at(-1)?.date ?? "",
+    historyStart: stock.prices[0]?.date ?? "",
+    historySessions: stock.prices.length,
+    marketCap: options.marketCap ?? null,
+    securityType: options.securityType ?? "common-stock",
+  };
 }
 
 export function formatCompactCurrency(value: number | null | undefined): string {

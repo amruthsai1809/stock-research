@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
-import type { BenchmarkRepository } from "@/src/application/ports/repositories";
-import type { AnalyzedStock } from "@/src/domain/stock";
+import type { BenchmarkRepository, MarketRepository } from "@/src/application/ports/repositories";
+import type { StockSummary } from "@/src/domain/stock";
 import { analyzePortfolio, demoPortfolioTransactions, parseBrokerPdfText, parsePortfolioText, type PortfolioBenchmark, type PortfolioParseResult, type PortfolioTransaction } from "@/src/domain/portfolio";
 import { PortfolioPerformanceChart } from "@/src/components/charts/PortfolioPerformanceChart";
 import { MetricCard, StockMark, Tag } from "@/src/components/ui";
+import { useStockDetails } from "@/src/features/market/useStockDetails";
 
-export function PortfolioLab({ stocks, onSelect, benchmarkRepository }: { stocks: AnalyzedStock[]; onSelect: (symbol: string) => void; benchmarkRepository: BenchmarkRepository }) {
+export function PortfolioLab({ stocks, onSelect, benchmarkRepository, marketRepository }: { stocks: StockSummary[]; onSelect: (symbol: string) => void; benchmarkRepository: BenchmarkRepository; marketRepository: MarketRepository }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [transactions, setTransactions] = useState<PortfolioTransaction[]>(demoPortfolioTransactions);
   const [benchmarks, setBenchmarks] = useState<PortfolioBenchmark[]>([]);
@@ -16,7 +17,13 @@ export function PortfolioLab({ stocks, onSelect, benchmarkRepository }: { stocks
   const [sourceName, setSourceName] = useState("Guided demo portfolio");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
-  const analysis = useMemo(() => analyzePortfolio(transactions, stocks, benchmark, benchmarks), [transactions, stocks, benchmark, benchmarks]);
+  const coveredSymbols = useMemo(() => new Set(stocks.map((stock) => stock.symbol)), [stocks]);
+  const requiredSymbols = useMemo(() => [...new Set([
+    ...transactions.map((transaction) => transaction.symbol).filter((symbol): symbol is string => Boolean(symbol && coveredSymbols.has(symbol))),
+    ...(coveredSymbols.has(benchmark) ? [benchmark] : []),
+  ])], [transactions, benchmark, coveredSymbols]);
+  const details = useStockDetails(marketRepository, requiredSymbols);
+  const analysis = useMemo(() => analyzePortfolio(transactions, details.stocks, benchmark, benchmarks), [transactions, details.stocks, benchmark, benchmarks]);
   const coverageTone = analysis.coverage.score >= 90 ? "good" : analysis.coverage.score >= 70 ? "warn" : "bad";
 
   useEffect(() => {
@@ -45,7 +52,7 @@ export function PortfolioLab({ stocks, onSelect, benchmarkRepository }: { stocks
       setWarnings(result.warnings);
       if (result.transactions.length) { setTransactions(result.transactions); setSourceName(`${file.name} · ${result.format.toUpperCase()}`); }
     } catch {
-      setWarnings(["This file could not be read. Try the brokerage CSV, QFX/OFX, QIF, or a TIDE JSON export."]);
+      setWarnings(["This file could not be read. Try the brokerage CSV, QFX/OFX, QIF, or a Stock Research JSON export."]);
     }
   };
 
@@ -74,6 +81,8 @@ export function PortfolioLab({ stocks, onSelect, benchmarkRepository }: { stocks
       <button className="secondary-button" onClick={() => exportPortfolio(transactions)}>Export normalized JSON ↓</button>
     </section>
     {warnings.length > 0 && <div className="import-warnings" role="status">{warnings.map((warning) => <span key={warning}>⚑ {warning}</span>)}</div>}
+    {details.loading && <div className="import-warnings" role="status"><span>Loading price histories for the securities in this portfolio…</span></div>}
+    {details.error && <div className="import-warnings" role="alert"><span>{details.error}</span></div>}
 
     <section className="metric-grid metric-grid--six">
       <MetricCard label="Current value" value={money(analysis.currentValue)} detail={`${analysis.holdings.length} open positions`} accent="coral" />
@@ -106,7 +115,7 @@ export function PortfolioLab({ stocks, onSelect, benchmarkRepository }: { stocks
     </div>
 
     <section className="panel">
-      <div className="panel-heading"><div><span className="eyebrow">Audit trail</span><h2>Normalized activity ledger</h2><p>Review exactly what TIDE understood before using the analysis.</p></div><Tag tone="neutral">{formatDate(analysis.coverage.start)} — {formatDate(analysis.coverage.end)}</Tag></div>
+      <div className="panel-heading"><div><span className="eyebrow">Audit trail</span><h2>Normalized activity ledger</h2><p>Review exactly what the parser understood before using the analysis.</p></div><Tag tone="neutral">{formatDate(analysis.coverage.start)} — {formatDate(analysis.coverage.end)}</Tag></div>
       <div className="activity-table"><div className="activity-row activity-row--head"><span>Date</span><span>Action</span><span>Security</span><span>Quantity</span><span>Amount</span><span>Source</span></div>{[...transactions].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40).map((transaction) => <div className="activity-row" key={transaction.id}><span>{formatDate(transaction.date)}</span><span><Tag tone={transaction.type === "buy" || transaction.type === "deposit" ? "good" : transaction.type === "sell" || transaction.type === "withdrawal" ? "warn" : "blue"}>{transaction.type}</Tag></span><span>{transaction.symbol ?? "Cash"}</span><span>{transaction.quantity ? transaction.quantity.toFixed(2) : "—"}</span><span>{money(transaction.amount)}</span><span>{transaction.source}</span></div>)}</div>
     </section>
   </div>;
@@ -116,4 +125,4 @@ function money(value: number) { return new Intl.NumberFormat("en-US", { style: "
 function signed(value: number) { return `${value >= 0 ? "+" : ""}${value.toFixed(1)}`; }
 function signedMoney(value: number) { return `${value >= 0 ? "+" : "−"}${money(Math.abs(value))}`; }
 function formatDate(value: string | null) { if (!value) return "—"; return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
-function exportPortfolio(transactions: PortfolioTransaction[]) { const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), transactions }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "tide-portfolio.json"; anchor.click(); URL.revokeObjectURL(url); }
+function exportPortfolio(transactions: PortfolioTransaction[]) { const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), transactions }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "stock-research-portfolio.json"; anchor.click(); URL.revokeObjectURL(url); }

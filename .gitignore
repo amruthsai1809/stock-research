@@ -43,3 +43,9 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# Production market snapshots are generated in GitHub Actions and deployed
+# directly to Cloudflare. Stable per-symbol paths are overwritten in place;
+# daily snapshots are never committed to Git history.
+/public/data/market/
+/public/data/.market-stage-*/

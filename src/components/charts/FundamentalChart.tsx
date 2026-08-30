@@ -15,7 +15,7 @@ const metricLabels: Record<FinancialMetric, string> = {
 
 export function FundamentalChart({ annuals, companyName }: { annuals: AnnualFinancials[]; companyName: string }) {
   const [metric, setMetric] = useState<FinancialMetric>("revenue");
-  const validAnnuals = useMemo(() => annuals.slice(-6), [annuals]);
+  const validAnnuals = useMemo(() => annuals.slice(-10), [annuals]);
   const [selectedYear, setSelectedYear] = useState<number | null>(validAnnuals.at(-1)?.year ?? null);
   const selectedIndex = Math.max(0, validAnnuals.findIndex((annual) => annual.year === selectedYear));
   const selected = validAnnuals[selectedIndex] ?? validAnnuals.at(-1);

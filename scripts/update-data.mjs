@@ -1,12 +1,15 @@
-import { mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { writeJsonAtomic } from "./lib/atomicOutput.mjs";
-import { companies } from "./company-registry.mjs";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import path from "node:path";
+import { replaceDirectory, writeJsonAtomic } from "./lib/atomicOutput.mjs";
+import { loadEligibleUniverse, symbolSlug, universePolicy } from "./market/universe.mjs";
+import { summarizeStock } from "./market/summarize.mjs";
 
-const OUTPUT = new URL("../public/data/market-data.json", import.meta.url);
+const DATA_ROOT = path.resolve(import.meta.dirname, "..", "public", "data");
+const OUTPUT_DIRECTORY = path.join(DATA_ROOT, "market");
+const CONCURRENCY = Math.max(1, Math.min(12, Number.parseInt(process.env.MARKET_CONCURRENCY ?? "6", 10) || 6));
 const USER_AGENT =
   process.env.SEC_USER_AGENT ||
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36";
+  `Stock Research ${process.env.SEC_CONTACT || "research@amruthg.com"}`;
 
 const conceptAliases = {
   revenue: ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"],
@@ -30,11 +33,34 @@ const conceptAliases = {
 };
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+let secGate = Promise.resolve();
+let lastSecRequest = 0;
+
+async function fetchSecJson(url, headers) {
+  const turn = secGate.then(async () => {
+    const delay = Math.max(0, 125 - (Date.now() - lastSecRequest));
+    if (delay) await sleep(delay);
+    lastSecRequest = Date.now();
+  });
+  secGate = turn.catch(() => {});
+  await turn;
+  return fetchJson(url, headers);
+}
 
 async function fetchJson(url, headers = {}) {
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${url}`);
-  return response.json();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) });
+      if (response.ok) return response.json();
+      if (![403, 408, 429, 500, 502, 503, 504].includes(response.status) || attempt === 3) {
+        throw new Error(`${response.status} ${response.statusText}: ${url}`);
+      }
+    } catch (error) {
+      if (attempt === 3) throw error;
+    }
+    await sleep(700 * 2 ** attempt + Math.floor(Math.random() * 250));
+  }
+  throw new Error(`Request failed: ${url}`);
 }
 
 function pickUnits(concept, preferredUnit = "USD") {
@@ -66,7 +92,7 @@ function annualSeries(facts, aliases, unit = "USD") {
 
   const byPeriod = new Map();
   for (const entry of entries) byPeriod.set(entry.end, entry);
-  return [...byPeriod.values()].slice(-6).map((entry) => ({
+  return [...byPeriod.values()].slice(-10).map((entry) => ({
     year: Number(entry.end.slice(0, 4)),
     end: entry.end,
     filed: entry.filed,
@@ -82,7 +108,7 @@ function instantSeries(facts, aliases, unit = "USD") {
   const entries = selected.entries.sort((a, b) => a.end.localeCompare(b.end) || a.filed.localeCompare(b.filed));
   const byPeriod = new Map();
   for (const entry of entries) byPeriod.set(entry.end, entry);
-  return [...byPeriod.values()].slice(-6).map((entry) => ({
+  return [...byPeriod.values()].slice(-10).map((entry) => ({
     year: Number(entry.end.slice(0, 4)),
     end: entry.end,
     filed: entry.filed,
@@ -120,7 +146,7 @@ function mergeAnnualMetrics(facts) {
     : series.netIncome.length
       ? series.netIncome
       : series.operatingCashFlow;
-  const years = [...new Set(anchors.map((entry) => entry.year))].sort().slice(-6);
+  const years = [...new Set(anchors.map((entry) => entry.year))].sort().slice(-10);
   const valueFor = (metric, year) => series[metric].find((entry) => entry.year === year)?.value ?? null;
   const conceptFor = (metric, year) => series[metric].find((entry) => entry.year === year)?.concept ?? null;
   const sourceFor = (year) =>
@@ -199,15 +225,26 @@ function normalizePrices(payload) {
   const adjusted = result.indicators?.adjclose?.[0]?.adjclose || [];
   const history = (result.timestamp || []).flatMap((timestamp, index) => {
     const close = quote.close?.[index];
-    if (close == null) return [];
+    if (!Number.isFinite(close) || close <= 0) return [];
+    const normalized = {
+      open: quote.open?.[index],
+      high: quote.high?.[index],
+      low: quote.low?.[index],
+      adjustedClose: adjusted[index],
+    };
+    for (const [key, value] of Object.entries(normalized)) {
+      normalized[key] = Number.isFinite(value) && value > 0 ? value : close;
+    }
     return [{
       date: new Date(timestamp * 1000).toISOString().slice(0, 10),
-      open: roundPrice(quote.open?.[index] ?? close),
-      high: roundPrice(quote.high?.[index] ?? close),
-      low: roundPrice(quote.low?.[index] ?? close),
+      open: roundPrice(normalized.open),
+      high: roundPrice(normalized.high),
+      low: roundPrice(normalized.low),
       close: roundPrice(close),
-      adjustedClose: roundPrice(adjusted[index] ?? close),
-      volume: quote.volume?.[index] ?? 0,
+      adjustedClose: roundPrice(normalized.adjustedClose),
+      volume: Number.isFinite(quote.volume?.[index]) && quote.volume[index] >= 0
+        ? Math.round(quote.volume[index])
+        : 0,
     }];
   });
   return { meta: result.meta || {}, history };
@@ -218,22 +255,30 @@ function roundPrice(value) {
 }
 
 async function loadCompany(company) {
-  const [pricePayload, factsPayload] = await Promise.all([
-    fetchJson(`https://query1.finance.yahoo.com/v8/finance/chart/${company.symbol}?range=5y&interval=1d&events=div%2Csplits`, {
-      "User-Agent": "Mozilla/5.0 TIDE research-data refresh",
-    }),
-    fetchJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, {
+  const pricePayload = await fetchJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(company.providerSymbol)}?range=10y&interval=1d&events=div%2Csplits`, {
+    "User-Agent": "Mozilla/5.0 Stock Research data refresh",
+  });
+  let factsPayload = null;
+  try {
+    factsPayload = await fetchSecJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, {
       "User-Agent": USER_AGENT,
-      From: process.env.SEC_CONTACT || "https://github.com/open-source/tide",
+      From: process.env.SEC_CONTACT || "https://amruthg.com",
       Accept: "application/json",
       "Accept-Encoding": "gzip, deflate",
-    }),
-  ]);
+    });
+  } catch (error) {
+    process.stderr.write(`Fundamentals unavailable for ${company.symbol}: ${error.message}\n`);
+  }
   const prices = normalizePrices(pricePayload);
-  const annuals = attachFiscalValuation(mergeAnnualMetrics(factsPayload.facts), prices.history);
+  if (prices.history.length < 2) throw new Error("Price history contains fewer than two sessions.");
+  const annuals = factsPayload ? attachFiscalValuation(mergeAnnualMetrics(factsPayload.facts), prices.history) : [];
   return {
-    ...company,
-    description: factsPayload.entityName || company.name,
+    symbol: company.symbol,
+    cik: company.cik,
+    name: company.name,
+    sector: company.sector,
+    industry: company.industry,
+    description: factsPayload?.entityName || company.name,
     exchange: prices.meta.fullExchangeName || prices.meta.exchangeName || "US",
     currency: prices.meta.currency || "USD",
     prices: prices.history,
@@ -242,32 +287,82 @@ async function loadCompany(company) {
 }
 
 async function main() {
-  const stocks = [];
-  for (const company of companies) {
-    try {
-      stocks.push(await loadCompany(company));
-      process.stdout.write(`Updated ${company.symbol}\n`);
-    } catch (error) {
-      process.stderr.write(`Skipped ${company.symbol}: ${error.message}\n`);
+  const fullUniverse = await loadEligibleUniverse();
+  const requested = new Set((process.env.MARKET_SYMBOLS ?? "").split(",").map((value) => value.trim().toUpperCase()).filter(Boolean));
+  const maximum = Number.parseInt(process.env.MARKET_MAX_SYMBOLS ?? "0", 10) || 0;
+  let companies = requested.size ? fullUniverse.filter((company) => requested.has(company.symbol)) : fullUniverse;
+  if (maximum > 0) companies = companies.slice(0, maximum);
+  if (!companies.length) throw new Error("No eligible companies matched the requested refresh scope.");
+
+  await mkdir(DATA_ROOT, { recursive: true });
+  const stage = await mkdtemp(path.join(DATA_ROOT, ".market-stage-"));
+  const stockDirectory = path.join(stage, "stocks");
+  const recentDirectory = path.join(stage, "recent");
+  await mkdir(stockDirectory, { recursive: true });
+  await mkdir(recentDirectory, { recursive: true });
+
+  const summaries = [];
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(CONCURRENCY, companies.length) }, async () => {
+    while (cursor < companies.length) {
+      const index = cursor;
+      cursor += 1;
+      const company = companies[index];
+      try {
+        const stock = await loadCompany(company);
+        const fileName = `${symbolSlug(company.symbol)}.json`;
+        const currentYear = Number.parseInt(stock.prices.at(-1).date.slice(0, 4), 10);
+        const archivedPrices = stock.prices.filter((point) => Number.parseInt(point.date.slice(0, 4), 10) < currentYear);
+        const recentPrices = stock.prices.filter((point) => Number.parseInt(point.date.slice(0, 4), 10) === currentYear);
+        await Promise.all([
+          writeJsonAtomic(path.join(stockDirectory, fileName), { ...stock, prices: archivedPrices }),
+          writeJsonAtomic(path.join(recentDirectory, fileName), { symbol: stock.symbol, prices: recentPrices }),
+        ]);
+        summaries.push(summarizeStock(stock, {
+          dataPath: `./data/market/stocks/${fileName}`,
+          recentDataPath: `./data/market/recent/${fileName}`,
+          marketCap: company.marketCap,
+          securityType: company.securityType,
+        }));
+        process.stdout.write(`[market] ${String(index + 1).padStart(4, "0")}/${companies.length} ${company.symbol}\n`);
+      } catch (error) {
+        process.stderr.write(`Skipped ${company.symbol}: ${error.message}\n`);
+      }
     }
-    await sleep(150);
+  });
+  await Promise.all(workers);
+
+  const minimumSuccess = requested.size || maximum > 0 ? Math.ceil(companies.length * 0.8) : Math.ceil(companies.length * 0.9);
+  if (summaries.length < minimumSuccess) {
+    await rm(stage, { recursive: true, force: true });
+    throw new Error(`Data refresh failed quality gate: ${summaries.length}/${companies.length} companies loaded.`);
   }
-  if (stocks.length < Math.ceil(companies.length * 0.8)) {
-    throw new Error(`Data refresh failed quality gate: ${stocks.length}/${companies.length} companies loaded.`);
+  if (companies.some((company) => company.symbol === "DUOL") && !summaries.some((stock) => stock.symbol === "DUOL")) {
+    await rm(stage, { recursive: true, force: true });
+    throw new Error("Data refresh failed quality gate: DUOL did not load.");
   }
-  const lastDates = stocks.map((stock) => stock.prices.at(-1)?.date).filter(Boolean).sort();
+  summaries.sort((left, right) => right.dipScore - left.dipScore || left.symbol.localeCompare(right.symbol));
+  const lastDates = summaries.map((stock) => stock.priceAsOf).filter(Boolean).sort();
   const payload = {
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     priceAsOf: lastDates.at(-1) || null,
     sources: {
       prices: "Yahoo Finance chart data (community endpoint; end-of-day snapshot)",
       fundamentals: "SEC EDGAR Company Facts",
+      universe: "Nasdaq stock screener joined to SEC exchange and CIK identifiers",
     },
-    stocks,
+    universe: {
+      ...universePolicy,
+      eligibleCount: fullUniverse.length,
+      publishedCount: summaries.length,
+      scope: requested.size || maximum > 0 ? "sample" : "full",
+    },
+    stocks: summaries,
   };
-  await mkdir(new URL("../public/data/", import.meta.url), { recursive: true });
-  await writeJsonAtomic(fileURLToPath(OUTPUT), payload);
-  process.stdout.write(`Wrote ${stocks.length} companies to ${OUTPUT.pathname}\n`);
+  await writeJsonAtomic(path.join(stage, "index.json"), payload);
+  await replaceDirectory(stage, OUTPUT_DIRECTORY);
+  process.stdout.write(`Wrote ${summaries.length} companies as one compact index, stable archives, and current-year deltas.\n`);
 }
 
 main().catch((error) => {

@@ -15,23 +15,30 @@ test.afterEach(async ({ page }) => {
   expect(errorsByPage.get(page) ?? []).toEqual([]);
 });
 
-test("five-year charts render their complete selected histories", async ({ page }) => {
-  await page.getByLabel("Tesla price range").getByRole("button", { name: "5Y" }).click();
-  const discoverReadout = page.locator("[data-chart-range='5Y']").first();
-  await expect(discoverReadout).toHaveAttribute("data-session-count", /1[0-9]{3}/);
+test("ten-year chart controls render the complete available histories", async ({ page }) => {
+  await page.getByLabel(/price range/).first().getByRole("button", { name: "10Y" }).click();
+  const discoverReadout = page.locator("[data-chart-range='10Y']").first();
+  await expect(discoverReadout).toHaveAttribute("data-session-count", /[1-9][0-9]{3}/);
   await expectCompleteRange(discoverReadout);
-  const discoverChart = page.locator(".interactive-price-chart").filter({ has: page.getByLabel("Tesla price range") });
+  const discoverChart = page.locator(".interactive-price-chart").first();
   const discoverPlot = discoverChart.locator(".chart-stage");
   const discoverPlotBox = await discoverPlot.boundingBox();
   expect(discoverPlotBox).not.toBeNull();
-  await page.mouse.move(discoverPlotBox!.x + discoverPlotBox!.width * 0.35, discoverPlotBox!.y + discoverPlotBox!.height * 0.45);
+  await expect(discoverPlot.locator("canvas").first()).toBeVisible();
+  await page.waitForTimeout(300);
+  await page.mouse.move(0, 0);
+  await page.mouse.move(discoverPlotBox!.x + discoverPlotBox!.width * 0.5, discoverPlotBox!.y + discoverPlotBox!.height * 0.5, { steps: 8 });
   await expect(discoverChart.locator(".chart-readout__quote")).toContainText("Pointed session");
 
   await page.getByRole("button", { name: /Compare/ }).click();
   await expect(page.getByRole("heading", { name: /Compare the business and the price/i })).toBeVisible();
-  await page.getByLabel("Comparison period").getByRole("button", { name: "5Y" }).click();
-  const compareReadout = page.locator("[data-chart-range='5Y']").first();
-  await expect(compareReadout).toHaveAttribute("data-session-count", /1[0-9]{3}/);
+  await page.getByLabel("Company A").selectOption("MSFT");
+  await page.getByLabel("Company B").selectOption("AAPL");
+  await expect(page.locator(".comparison-live")).toContainText("MSFT");
+  await expect(page.locator(".comparison-live")).toContainText("AAPL");
+  await page.getByLabel("Comparison period").getByRole("button", { name: "10Y" }).click();
+  const compareReadout = page.locator("[data-chart-range='10Y']").first();
+  await expect(compareReadout).toHaveAttribute("data-session-count", /[1-9][0-9]{3}/);
   await expectCompleteRange(compareReadout);
 });
 
@@ -104,6 +111,7 @@ async function expectCompleteRange(locator: ReturnType<Page["locator"]>) {
 }
 
 async function expectAccessible(page: Page) {
+  await expect(page.locator(".view-stack").first()).toHaveCSS("opacity", "1");
   const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
   const severe = result.violations
     .filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))
