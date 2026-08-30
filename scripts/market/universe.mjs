@@ -26,7 +26,7 @@ export async function loadEligibleUniverse({ fetchImpl = fetch, minimumMarketCap
   const [nasdaqPayload, secPayload] = await Promise.all([
     fetchJson(fetchImpl, `${NASDAQ_SCREENER_URL}&_=${Date.now()}`, browserHeaders),
     fetchJson(fetchImpl, SEC_TICKERS_URL, {
-      "User-Agent": process.env.SEC_USER_AGENT ?? `Stock Research ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
+      "User-Agent": process.env.SEC_USER_AGENT ?? `Equity Lab ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
       Accept: "application/json",
     }),
   ]);

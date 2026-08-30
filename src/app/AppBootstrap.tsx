@@ -1,8 +1,8 @@
 "use client";
 
 import { appServices } from "@/src/app/composition/services";
-import { ResearchApp } from "@/src/features/shell/TideApp";
+import { EquityLabApp } from "@/src/features/shell/EquityLabApp";
 
 export function AppBootstrap() {
-  return <ResearchApp services={appServices} />;
+  return <EquityLabApp services={appServices} />;
 }

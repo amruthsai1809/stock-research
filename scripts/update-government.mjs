@@ -140,7 +140,7 @@ function validateGovernmentSnapshot({ index, recent, meta, leaderboard }) {
 }
 
 async function main() {
-  const temp = await mkdtemp(path.join(tmpdir(), "tide-government-"));
+  const temp = await mkdtemp(path.join(tmpdir(), "equity-lab-government-"));
   try {
     const commit = await cloneUpstream(temp);
     const dataDir = path.join(temp, "public", "data");

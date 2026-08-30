@@ -1,15 +1,14 @@
 export const product = {
-  /** Temporary neutral identity until the final product name is selected. */
-  name: "Stock Research",
-  shortName: "Research",
-  mark: "SR",
+  name: "Equity Lab",
+  shortName: "Equity Lab",
+  mark: "EL",
   description: "Evidence-first U.S. equity research",
   storage: {
-    theme: "stock-research-theme",
-    watchlist: "stock-research-watchlist",
+    theme: "equity-lab-theme",
+    watchlist: "equity-lab-watchlist",
   },
   legacyStorage: {
-    theme: "tide-theme",
-    watchlist: "tide-watchlist",
+    theme: ["stock-research-theme", "tide-theme"],
+    watchlist: ["stock-research-watchlist", "tide-watchlist"],
   },
 } as const;

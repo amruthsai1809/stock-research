@@ -9,7 +9,7 @@ afterEach(async () => { await Promise.all(cleanup.splice(0).map((target) => rm(t
 
 describe("atomic snapshot output", () => {
   it("replaces a complete directory only after staging succeeds", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tide-atomic-test-")); cleanup.push(root);
+    const root = await mkdtemp(path.join(tmpdir(), "equity-lab-atomic-test-")); cleanup.push(root);
     const target = path.join(root, "snapshot"); await mkdir(target); await writeFile(path.join(target, "old.json"), "old");
     const staged = await createStagedDirectory(target); await writeFile(path.join(staged, "new.json"), "new");
     await replaceDirectory(staged, target);
@@ -18,7 +18,7 @@ describe("atomic snapshot output", () => {
   });
 
   it("writes valid JSON without leaving temporary output", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tide-json-test-")); cleanup.push(root);
+    const root = await mkdtemp(path.join(tmpdir(), "equity-lab-json-test-")); cleanup.push(root);
     const target = path.join(root, "value.json");
     await writeJsonAtomic(target, { ok: true });
     expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ ok: true });

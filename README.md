@@ -1,6 +1,6 @@
-# Stock Research
+# Equity Lab
 
-> Working product name. Brand and final `amruthg.com` subdomain are intentionally centralized and deferred.
+Equity Lab is deployed at [equitylab.amruthg.com](https://equitylab.amruthg.com).
 
 An evidence-first, login-free U.S. equity research workbench. The production universe screens Nasdaq, NYSE, and NYSE American securities for a market capitalization of at least $1 billion, includes common shares and ADRs, excludes funds and non-common instruments, and publishes ten years of end-of-day history or the complete available history for newer IPOs.
 
@@ -95,7 +95,7 @@ npm run deploy:cloudflare   # deploy a validated build with Wrangler
 
 `.github/workflows/quality.yml` validates every push and pull request. `.github/workflows/update-market-data.yml` runs after U.S. market days, creates the production data entirely in the ephemeral runner, validates it, builds once, and deploys the result. It requires only `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets; neither is exposed to the client.
 
-The Cloudflare project uses static assets plus the Vinext application Worker. Keep it on the Workers Free plan for a hard no-spend operating boundary. The final custom domain is deliberately not configured until the product name and subdomain are selected.
+The Cloudflare project uses static assets plus the Vinext application Worker. Keep it on the Workers Free plan for a hard no-spend operating boundary. The production hostname is `equitylab.amruthg.com`.
 
 ## Data and privacy policy
 

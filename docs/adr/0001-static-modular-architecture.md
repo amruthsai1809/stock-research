@@ -5,7 +5,7 @@
 
 ## Context
 
-TIDE must remain deployable as a static, login-free application while supporting independent research capabilities and replaceable data sources.
+Equity Lab must remain deployable as a static, login-free application while supporting independent research capabilities and replaceable data sources.
 
 ## Decision
 

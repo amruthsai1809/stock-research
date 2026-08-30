@@ -9,7 +9,7 @@ const OUTPUT_DIRECTORY = path.join(DATA_ROOT, "market");
 const CONCURRENCY = Math.max(1, Math.min(12, Number.parseInt(process.env.MARKET_CONCURRENCY ?? "6", 10) || 6));
 const USER_AGENT =
   process.env.SEC_USER_AGENT ||
-  `Stock Research ${process.env.SEC_CONTACT || "research@amruthg.com"}`;
+  `Equity Lab ${process.env.SEC_CONTACT || "research@amruthg.com"}`;
 
 const conceptAliases = {
   revenue: ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"],
@@ -256,7 +256,7 @@ function roundPrice(value) {
 
 async function loadCompany(company) {
   const pricePayload = await fetchJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(company.providerSymbol)}?range=10y&interval=1d&events=div%2Csplits`, {
-    "User-Agent": "Mozilla/5.0 Stock Research data refresh",
+    "User-Agent": "Mozilla/5.0 Equity Lab data refresh",
   });
   let factsPayload = null;
   try {

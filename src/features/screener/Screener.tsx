@@ -49,7 +49,7 @@ function downloadCsv(stocks: StockSummary[]) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "stock-research-screen.csv";
+  anchor.download = "equity-lab-screen.csv";
   anchor.click();
   URL.revokeObjectURL(url);
 }

@@ -52,7 +52,7 @@ export function PortfolioLab({ stocks, onSelect, benchmarkRepository, marketRepo
       setWarnings(result.warnings);
       if (result.transactions.length) { setTransactions(result.transactions); setSourceName(`${file.name} · ${result.format.toUpperCase()}`); }
     } catch {
-      setWarnings(["This file could not be read. Try the brokerage CSV, QFX/OFX, QIF, or a Stock Research JSON export."]);
+      setWarnings(["This file could not be read. Try the brokerage CSV, QFX/OFX, QIF, or an Equity Lab JSON export."]);
     }
   };
 
@@ -125,4 +125,4 @@ function money(value: number) { return new Intl.NumberFormat("en-US", { style: "
 function signed(value: number) { return `${value >= 0 ? "+" : ""}${value.toFixed(1)}`; }
 function signedMoney(value: number) { return `${value >= 0 ? "+" : "−"}${money(Math.abs(value))}`; }
 function formatDate(value: string | null) { if (!value) return "—"; return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`)); }
-function exportPortfolio(transactions: PortfolioTransaction[]) { const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), transactions }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "stock-research-portfolio.json"; anchor.click(); URL.revokeObjectURL(url); }
+function exportPortfolio(transactions: PortfolioTransaction[]) { const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), transactions }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "equity-lab-portfolio.json"; anchor.click(); URL.revokeObjectURL(url); }

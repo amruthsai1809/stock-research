@@ -12,10 +12,10 @@ const OUTPUT_PATH = path.join(ROOT, "public", "data", "research-signals.json");
 // window while keeping the scheduled refresh comfortably below SEC rate limits.
 const MAX_FILINGS_PER_COMPANY = 40;
 const SEC_HEADERS = {
-  "User-Agent": `Stock Research ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
+  "User-Agent": `Equity Lab ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
   Accept: "application/json,application/xml,text/xml",
 };
-const YAHOO_USER_AGENT = "Mozilla/5.0 Stock Research data refresh";
+const YAHOO_USER_AGENT = "Mozilla/5.0 Equity Lab data refresh";
 
 let secGate = Promise.resolve();
 let lastSecRequest = 0;

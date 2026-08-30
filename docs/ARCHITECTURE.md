@@ -2,7 +2,7 @@
 
 ## Design goals
 
-Stock Research is designed around five constraints: zero-cost deployment, explainable calculations, source traceability, scalable static data, and a codebase that remains approachable as the feature set grows.
+Equity Lab is designed around five constraints: zero-cost deployment, explainable calculations, source traceability, scalable static data, and a codebase that remains approachable as the feature set grows.
 
 ## Dependency direction
 

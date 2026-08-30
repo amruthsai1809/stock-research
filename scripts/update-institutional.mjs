@@ -8,7 +8,7 @@ const OUTPUT_DIR = path.join(ROOT, "public", "data", "institutional");
 const MAX_QUARTERS = 20;
 const MAX_HOLDINGS_PER_QUARTER = 250;
 const SEC_HEADERS = {
-  "User-Agent": `Stock Research ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
+  "User-Agent": `Equity Lab ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
   Accept: "application/json,text/xml,application/xml,text/html",
 };
 
