@@ -2,7 +2,7 @@ export const product = {
   name: "Equity Lab",
   shortName: "Equity Lab",
   mark: "EL",
-  description: "Evidence-first U.S. equity research",
+  description: "Public-market analysis from end-of-day prices and official filings",
   storage: {
     theme: "equity-lab-theme",
     watchlist: "equity-lab-watchlist",

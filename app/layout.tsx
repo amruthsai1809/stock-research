@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://el.amruthg.com"),
-  title: `${product.name} — Evidence-first equity research`,
+  title: product.name,
   description:
     "Research stocks with transparent multi-factor scores, dip analysis, 13F portfolios, public-official trades, and private AI-assisted memos.",
   applicationName: product.name,
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     "options payoff",
   ],
   openGraph: {
-    title: `${product.name} — Evidence before opinion`,
+    title: product.name,
     description:
       "Transparent stock scores, filing-linked evidence, dip analysis, portfolios, and private AI-assisted research.",
     type: "website",
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: `${product.name} — Evidence before opinion`,
+    title: product.name,
     description:
       "Transparent stock scores, filing-linked evidence, dip analysis, portfolios, and private AI-assisted research.",
   },

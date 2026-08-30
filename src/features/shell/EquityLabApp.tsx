@@ -3,6 +3,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { ApplicationServices } from "@/src/application/ports/repositories";
 import type { MarketIndex, StockSummary } from "@/src/domain/stock";
+import { searchCompanies } from "@/src/domain/companySearch";
 import { StockMark, Tag } from "@/src/components/ui";
 import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/domain/types";
 import { navigation, readSymbol, readView, writeView, type AppView } from "@/src/features/shell/navigation";
@@ -104,7 +105,7 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <button className="brand" onClick={() => navigate("discover")} aria-label={`${product.name} home`}><span className="brand__mark">{product.mark}</span><span><b>{product.name}</b><small>Equity research</small></span></button>
+      <button className="brand" onClick={() => navigate("discover")} aria-label={`${product.name} home`}><span className="brand__mark">{product.mark}</span><span><b>{product.name}</b></span></button>
       <div className="sidebar-navigation">
         <nav className="primary-nav" aria-label="Primary navigation">
           <span className="nav-label">Research</span>
@@ -151,7 +152,7 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
         {view === "government" && <GovernmentInvestments onSelect={selectStock} repository={services.governmentRepository} />}
       </Suspense></main>
 
-      <footer className="site-footer"><span><b>{product.name}</b> · Open-source equity research</span><span>Data as of {formatDate(dataset.priceAsOf)} · Not investment advice</span></footer>
+      <footer className="site-footer"><span><b>{product.name}</b> · Open-source project</span><span>Data as of {formatDate(dataset.priceAsOf)} · Not investment advice</span></footer>
     </div>
 
     <nav className="mobile-nav" aria-label="Mobile navigation">{navigation.map((item) => <button key={item.id} className={view === item.id ? "is-active" : ""} onClick={() => navigate(item.id)}><span>{item.glyph}</span><small>{item.shortLabel}</small></button>)}</nav>
@@ -174,8 +175,44 @@ function DetailLoading({ error }: { error: string | null }) {
 
 function SearchDialog({ stocks, onSelect, onClose }: { stocks: StockSummary[]; onSelect: (symbol: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState("");
-  const results = stocks.filter((stock) => `${stock.symbol} ${stock.name} ${stock.sector}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8);
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search companies" onMouseDown={(event) => event.stopPropagation()}><div className="search-dialog__input"><span>⌕</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search ticker, company, or sector…" /><kbd>ESC</kbd></div><div className="search-dialog__hint"><span>Companies</span><small>{results.length} results</small></div><div className="search-results">{results.map((stock, index) => <button key={stock.symbol} onClick={() => onSelect(stock.symbol)}><StockMark symbol={stock.symbol} /><span><b>{stock.symbol}</b><small>{stock.name} · {stock.sector}</small></span><Tag tone={stock.drawdown52Week < -15 ? "warn" : "neutral"}>{stock.drawdown52Week.toFixed(1)}% from high</Tag><kbd>{index + 1}</kbd></button>)}</div><div className="search-dialog__footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open research</span><span>Search runs locally</span></div></section></div>;
+  const [activeIndex, setActiveIndex] = useState(0);
+  const results = searchCompanies(stocks, query, 10);
+  const resultListId = "global-company-search-results";
+
+  return <div className="modal-backdrop" onMouseDown={onClose}>
+    <section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search companies" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="search-dialog__input"><span>⌕</span><input
+        autoFocus
+        role="combobox"
+        aria-label="Search by ticker or company name"
+        aria-autocomplete="list"
+        aria-expanded="true"
+        aria-controls={resultListId}
+        aria-activedescendant={results[activeIndex] ? `${resultListId}-${results[activeIndex].symbol}` : undefined}
+        value={query}
+        onChange={(event) => { setQuery(event.target.value); setActiveIndex(0); }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && results.length) { event.preventDefault(); setActiveIndex((current) => (current + 1) % results.length); }
+          if (event.key === "ArrowUp" && results.length) { event.preventDefault(); setActiveIndex((current) => (current - 1 + results.length) % results.length); }
+          if (event.key === "Enter" && results[activeIndex]) { event.preventDefault(); onSelect(results[activeIndex].symbol); }
+          if (/^[1-9]$/.test(event.key) && results[Number(event.key) - 1]) onSelect(results[Number(event.key) - 1].symbol);
+        }}
+        placeholder="Try “duol”, “Microsoft”, or a ticker…"
+      /><kbd>ESC</kbd></div>
+      <div className="search-dialog__hint"><span>{query ? "Best matches" : "Suggested companies"}</span><small>{results.length} results</small></div>
+      <div className="search-results" id={resultListId} role="listbox">{results.map((stock, index) => <button
+        role="option"
+        id={`${resultListId}-${stock.symbol}`}
+        aria-selected={index === activeIndex}
+        className={index === activeIndex ? "is-active" : ""}
+        key={stock.symbol}
+        onMouseEnter={() => setActiveIndex(index)}
+        onClick={() => onSelect(stock.symbol)}
+      ><StockMark symbol={stock.symbol} /><span><b>{stock.symbol}</b><small>{stock.name} · {stock.sector}</small></span><Tag tone={stock.drawdown52Week < -15 ? "warn" : "neutral"}>{stock.drawdown52Week.toFixed(1)}% from high</Tag><kbd>{index + 1}</kbd></button>)}</div>
+      {!results.length && <div className="search-dialog__empty"><b>No company found</b><span>Try part of the company name, sector, or ticker.</span></div>}
+      <div className="search-dialog__footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open research</span><span>Partial names and common typos supported</span></div>
+    </section>
+  </div>;
 }
 
 function WatchlistDrawer({ stocks, symbols, onSelect, onToggle, onClose }: { stocks: StockSummary[]; symbols: string[]; onSelect: (symbol: string) => void; onToggle: (symbol: string) => void; onClose: () => void }) {

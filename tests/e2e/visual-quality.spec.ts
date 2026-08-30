@@ -99,6 +99,42 @@ test("Dip Finder scores stay legible and sidebar support content never collapses
   await expect(page.locator(".sidebar-footer")).toBeInViewport();
 });
 
+test("company picker stays anchored on desktop and becomes a bounded mobile sheet", async ({ page }) => {
+  await page.goto("/?view=compare");
+  await expect(page.getByRole("heading", { name: /Compare the business and the price/i })).toBeVisible();
+  await expect(page.locator(".brand small")).toHaveCount(0);
+
+  const addCompany = page.getByRole("button", { name: "Add company" });
+  const triggerBox = await addCompany.boundingBox();
+  expect(triggerBox).not.toBeNull();
+  await addCompany.click();
+  const picker = page.locator(".company-picker");
+  await expect(picker).toBeVisible();
+  const desktopPickerBox = await picker.boundingBox();
+  expect(desktopPickerBox).not.toBeNull();
+  expect(desktopPickerBox!.y).toBeGreaterThanOrEqual(triggerBox!.y + triggerBox!.height - 1);
+  expect(desktopPickerBox!.x).toBeGreaterThanOrEqual(0);
+  expect(desktopPickerBox!.x + desktopPickerBox!.width).toBeLessThanOrEqual(1440);
+  if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/compare-picker-desktop.png", fullPage: false });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  const mobileAdd = page.getByRole("button", { name: "Add company" });
+  await mobileAdd.scrollIntoViewIfNeeded();
+  await mobileAdd.click();
+  const mobilePickerBox = await page.locator(".company-picker").boundingBox();
+  expect(mobilePickerBox).not.toBeNull();
+  expect(mobilePickerBox!.x).toBeGreaterThanOrEqual(0);
+  expect(mobilePickerBox!.x + mobilePickerBox!.width).toBeLessThanOrEqual(390);
+  expect(mobilePickerBox!.y).toBeGreaterThanOrEqual(0);
+  expect(mobilePickerBox!.y + mobilePickerBox!.height).toBeLessThanOrEqual(844);
+  await expectNoDocumentOverflow(page);
+  if (process.env.VISUAL_EVIDENCE === "1") {
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: "outputs/visual-qa/compare-picker-mobile.png", fullPage: false });
+  }
+});
+
 async function expectNoDocumentOverflow(page: Page) {
   const dimensions = await page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);

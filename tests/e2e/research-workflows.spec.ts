@@ -39,10 +39,27 @@ test("ten-year chart controls render the complete available histories", async ({
 
   await page.getByRole("button", { name: /Compare/ }).click();
   await expect(page.getByRole("heading", { name: /Compare the business and the price/i })).toBeVisible();
-  await page.getByLabel("Company A").selectOption("MSFT");
-  await page.getByLabel("Company B").selectOption("AAPL");
-  await expect(page.locator(".comparison-live")).toContainText("MSFT");
-  await expect(page.locator(".comparison-live")).toContainText("AAPL");
+  await expect(page.locator(".compare-company-card")).toHaveCount(3);
+  await page.getByRole("button", { name: "Add company" }).click();
+  await page.getByRole("combobox", { name: "Find a company to add" }).fill("netfl");
+  await page.getByRole("option", { name: /NFLX/ }).click();
+  await page.getByRole("button", { name: "Add company" }).click();
+  await page.getByRole("combobox", { name: "Find a company to add" }).fill("duol");
+  await page.getByRole("option", { name: /DUOL/ }).click();
+  await expect(page.locator(".compare-company-card")).toHaveCount(5);
+  await page.getByRole("button", { name: "Move DUOL left" }).click();
+  await expect(page.locator(".comparison-table thead th")).toHaveText(["Metric", "AAPL", "MSFT", "GOOGL", "DUOL", "NFLX"]);
+  await page.getByRole("button", { name: "Remove NFLX" }).click();
+  await expect(page.locator(".compare-company-card")).toHaveCount(4);
+  await page.getByRole("button", { name: "Add company" }).click();
+  await page.getByRole("combobox", { name: "Find a company to add" }).fill("netfl");
+  await page.getByRole("option", { name: /NFLX/ }).click();
+  await page.getByRole("button", { name: "Replace GOOGL" }).click();
+  await page.getByRole("combobox", { name: "Find a company to replace GOOGL" }).fill("amazo");
+  await page.getByRole("option", { name: /AMZN/ }).click();
+  await expect(page.locator(".comparison-table thead th")).toHaveText(["Metric", "AAPL", "MSFT", "AMZN", "DUOL", "NFLX"]);
+  await expect(page.locator(".comparison-live")).toContainText("NFLX");
+  await expect(page.locator(".comparison-live")).toContainText("DUOL");
   await page.getByLabel("Comparison period").getByRole("button", { name: "10Y" }).click();
   const compareReadout = page.locator("[data-chart-range='10Y']").first();
   await expect(compareReadout).toHaveAttribute("data-session-count", /[1-9][0-9]{3}/);
@@ -79,9 +96,9 @@ test("archive lifecycle, private portfolio import, search, and theme controls re
   await page.keyboard.press("Control+K");
   const searchDialog = page.getByRole("dialog", { name: "Search companies" });
   await expect(searchDialog).toBeVisible();
-  await page.getByPlaceholder(/Search ticker/).fill("Microsoft");
-  await searchDialog.getByRole("button", { name: /MSFT/ }).click();
-  await expect(page.getByRole("heading", { name: /Microsoft/i }).first()).toBeVisible();
+  await page.getByRole("combobox", { name: "Search by ticker or company name" }).fill("duol");
+  await searchDialog.getByRole("option", { name: /DUOL/ }).click();
+  await expect(page.getByRole("heading", { name: /Duolingo/i }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");

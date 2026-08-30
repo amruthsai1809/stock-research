@@ -17,8 +17,8 @@ test("renders the Equity Lab application shell", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>Equity Lab — Evidence-first equity research<\/title>/i);
-  assert.match(html, /Equity Lab — Evidence before opinion/i);
+  assert.match(html, /<title>Equity Lab<\/title>/i);
+  assert.match(html, /property="og:title" content="Equity Lab"/i);
   assert.match(html, /https:\/\/el\.amruthg\.com/i);
   assert.match(html, /Preparing the research desk/);
   assert.match(html, /Loading the compact market index and SEC-derived fundamentals/);
