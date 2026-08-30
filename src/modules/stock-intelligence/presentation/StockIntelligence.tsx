@@ -19,6 +19,7 @@ export function StockIntelligence({ stocks, repository, onSelect }: { stocks: St
   const vm = useStockIntelligence(stocks, repository);
   const [query, setQuery] = useState("");
   const [universeView, setUniverseView] = useState<"ranked" | "opportunity" | "confidence">("ranked");
+  const [visibleCount, setVisibleCount] = useState(100);
   const shown = useMemo(() => {
     const filtered = vm.scores.filter((score) => `${score.symbol} ${score.companyName}`.toLowerCase().includes(query.toLowerCase()));
     if (universeView === "opportunity") return [...filtered].sort((a, b) => b.opportunity - a.opportunity);
@@ -48,14 +49,15 @@ export function StockIntelligence({ stocks, repository, onSelect }: { stocks: St
 
     <section className="strategy-ribbon panel" aria-label="Scoring strategy">
       <div><span className="eyebrow">Research lens</span><b>{intelligenceStrategies[vm.strategy].description}</b></div>
-      <div className="strategy-tabs">{Object.entries(intelligenceStrategies).map(([id, item]) => <button key={id} className={vm.strategy === id ? "is-active" : ""} onClick={() => vm.setStrategy(id as keyof typeof intelligenceStrategies)}>{item.label}</button>)}</div>
+      <div className="strategy-tabs">{Object.entries(intelligenceStrategies).map(([id, item]) => <button key={id} className={vm.strategy === id ? "is-active" : ""} onClick={() => { vm.setStrategy(id as keyof typeof intelligenceStrategies); setVisibleCount(100); }}>{item.label}</button>)}</div>
     </section>
 
     <div className="intelligence-grid">
       <section className="panel intelligence-ranking">
         <div className="panel-heading"><div><span className="eyebrow">Covered universe</span><h2>Research priorities</h2><p>Ranked under the active strategy, not presented as buy recommendations.</p></div><Tag tone="neutral">{vm.scores.length} stocks</Tag></div>
-        <div className="ranking-toolbar"><label><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a company" /></label><div>{(["ranked", "opportunity", "confidence"] as const).map((id) => <button key={id} className={universeView === id ? "is-active" : ""} onClick={() => setUniverseView(id)}>{id}</button>)}</div></div>
-        <div className="ranking-list">{shown.map((score, index) => <button key={score.symbol} className={vm.selected?.symbol === score.symbol ? "is-active" : ""} onClick={() => vm.setSelectedSymbol(score.symbol)}><span className="rank-number">{String(index + 1).padStart(2, "0")}</span><StockMark symbol={score.symbol} size="sm" /><span className="ranking-company"><b>{score.symbol}</b><small>{score.companyName}</small></span><span className="ranking-mini"><i style={{ width: `${score.score}%` }} /><small>{score.confidence}% confidence</small></span><strong>{score.score}</strong></button>)}</div>
+        <div className="ranking-toolbar"><label><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); setVisibleCount(100); }} placeholder="Find a company" /></label><div>{(["ranked", "opportunity", "confidence"] as const).map((id) => <button key={id} className={universeView === id ? "is-active" : ""} onClick={() => { setUniverseView(id); setVisibleCount(100); }}>{id}</button>)}</div></div>
+        <div className="ranking-list">{shown.slice(0, visibleCount).map((score, index) => <button key={score.symbol} className={vm.selected?.symbol === score.symbol ? "is-active" : ""} onClick={() => vm.setSelectedSymbol(score.symbol)}><span className="rank-number">{String(index + 1).padStart(2, "0")}</span><StockMark symbol={score.symbol} size="sm" /><span className="ranking-company"><b>{score.symbol}</b><small>{score.companyName}</small></span><span className="ranking-mini"><i style={{ width: `${score.score}%` }} /><small>{score.confidence}% confidence</small></span><strong>{score.score}</strong></button>)}</div>
+        {visibleCount < shown.length && <button type="button" className="secondary-button incremental-load" onClick={() => setVisibleCount((current) => current + 100)}>Show 100 more <span>{visibleCount} of {shown.length}</span></button>}
       </section>
 
       <div className="intelligence-detail">

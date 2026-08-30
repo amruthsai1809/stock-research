@@ -179,7 +179,7 @@ test("company research controls update every analysis surface without stale cont
   for (const control of ["200D", "Reset", "50D"] as const) await page.getByRole("button", { name: control, exact: true }).first().click();
 
   await page.getByRole("button", { name: "Ownership & activity" }).click();
-  await expect(page.getByRole("heading", { name: "Insider transaction tape" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open-market insider activity" })).toBeVisible();
   for (const window of ["30D", "90D", "1Y"] as const) {
     await page.getByRole("button", { name: window, exact: true }).click();
     await expect(page.getByRole("button", { name: window, exact: true })).toHaveClass(/is-active/);
@@ -214,10 +214,35 @@ test("company research controls update every analysis surface without stale cont
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/?view=company&symbol=AAPL");
   await page.getByRole("button", { name: "Ownership & activity", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Insider transaction tape" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open-market insider activity" })).toBeVisible();
   const mobileWidth = await page.evaluate(() => ({ viewport: window.innerWidth, document: document.documentElement.scrollWidth }));
   expect(mobileWidth.document).toBeLessThanOrEqual(mobileWidth.viewport + 1);
   if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/company-ownership-mobile.png", fullPage: false });
+});
+
+test("Duolingo insider chart, filters, and SEC rows reconcile visibly", async ({ page }) => {
+  await page.goto("/?view=company&symbol=DUOL");
+  await expect(page.getByRole("heading", { name: /Duolingo/i }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Ownership & activity", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Open-market insider activity" })).toBeVisible();
+  await page.getByRole("button", { name: "1Y", exact: true }).click();
+
+  await expect(page.getByRole("button", { name: "Purchases 1", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Sales \d+$/ })).toBeVisible();
+  await page.getByRole("button", { name: "Purchases 1", exact: true }).click();
+  await expect(page.locator(".signal-table tbody")).toContainText("Shelton James H");
+  await expect(page.locator(".signal-table tbody")).toContainText("Mar 3, 2026");
+  await expect(page.locator(".signal-table tbody")).toContainText("$498.8K");
+
+  await page.getByRole("button", { name: /^All \d+$/ }).click();
+  await page.getByRole("button", { name: /March 2026:.*purchases.*sales/i }).click();
+  await expect(page.locator(".signal-table tbody")).toContainText("Shelton James H");
+  await expect(page.getByText("Showing 1 of 1", { exact: true })).toBeVisible();
+
+  await page.getByText("Why this can differ from Robinhood", { exact: true }).click();
+  await expect(page.getByText(/Robinhood’s TipRanks view also classifies Form 4 activity/i)).toBeVisible();
+  await expectAccessible(page);
+  if (process.env.VISUAL_EVIDENCE === "1") await page.locator(".market-signal-card--wide").first().screenshot({ path: "outputs/visual-qa/duol-insider-reconciled.png" });
 });
 
 async function expectCompleteRange(locator: ReturnType<Page["locator"]>) {

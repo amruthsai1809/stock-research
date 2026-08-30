@@ -99,22 +99,25 @@ test("Dip Finder scores stay legible and sidebar support content never collapses
   await expect(page.locator(".sidebar-footer")).toBeInViewport();
 });
 
-test("company picker stays anchored on desktop and becomes a bounded mobile sheet", async ({ page }) => {
+test("company picker is unobstructed, replaces the roster, and becomes a bounded mobile sheet", async ({ page }) => {
   await page.goto("/?view=compare");
   await expect(page.getByRole("heading", { name: /Compare the business and the price/i })).toBeVisible();
   await expect(page.locator(".brand small")).toHaveCount(0);
 
-  const addCompany = page.getByRole("button", { name: "Add company" });
-  const triggerBox = await addCompany.boundingBox();
+  const replaceCompany = page.getByRole("button", { name: "Replace AAPL" });
+  const triggerBox = await replaceCompany.boundingBox();
   expect(triggerBox).not.toBeNull();
-  await addCompany.click();
+  const replaceStarted = Date.now();
+  await replaceCompany.click();
   const picker = page.locator(".company-picker");
   await expect(picker).toBeVisible();
-  const desktopPickerBox = await picker.boundingBox();
-  expect(desktopPickerBox).not.toBeNull();
-  expect(desktopPickerBox!.y).toBeGreaterThanOrEqual(triggerBox!.y + triggerBox!.height - 1);
-  expect(desktopPickerBox!.x).toBeGreaterThanOrEqual(0);
-  expect(desktopPickerBox!.x + desktopPickerBox!.width).toBeLessThanOrEqual(1440);
+  await expectPickerUnobstructed(page);
+  await page.getByRole("combobox", { name: "Find a company to replace AAPL" }).fill("duoli");
+  await page.getByRole("option", { name: /DUOL Duolingo Inc/i }).click();
+  await expect(page.getByRole("button", { name: "Replace DUOL" })).toBeVisible();
+  await expect(page.locator(".comparison-table thead")).toContainText("DUOL");
+  await expect(page.locator(".comparison-live")).toContainText("DUOL");
+  expect(Date.now() - replaceStarted).toBeLessThan(2_000);
   if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/compare-picker-desktop.png", fullPage: false });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -122,12 +125,7 @@ test("company picker stays anchored on desktop and becomes a bounded mobile shee
   const mobileAdd = page.getByRole("button", { name: "Add company" });
   await mobileAdd.scrollIntoViewIfNeeded();
   await mobileAdd.click();
-  const mobilePickerBox = await page.locator(".company-picker").boundingBox();
-  expect(mobilePickerBox).not.toBeNull();
-  expect(mobilePickerBox!.x).toBeGreaterThanOrEqual(0);
-  expect(mobilePickerBox!.x + mobilePickerBox!.width).toBeLessThanOrEqual(390);
-  expect(mobilePickerBox!.y).toBeGreaterThanOrEqual(0);
-  expect(mobilePickerBox!.y + mobilePickerBox!.height).toBeLessThanOrEqual(844);
+  await expectPickerUnobstructed(page);
   await expectNoDocumentOverflow(page);
   if (process.env.VISUAL_EVIDENCE === "1") {
     await page.waitForTimeout(250);
@@ -136,11 +134,14 @@ test("company picker stays anchored on desktop and becomes a bounded mobile shee
 });
 
 test("all company selectors search partial names, update state, and remain bounded", async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 560 });
   await page.goto("/?view=valuation&symbol=AAPL");
   await expect(page.getByRole("heading", { name: /Make expectations visible/i })).toBeVisible();
   const valuationTrigger = page.getByRole("button", { name: /Valuing: AAPL/ });
   const initialModelValue = await page.getByText("Model value", { exact: true }).locator("..").textContent();
   await valuationTrigger.click();
+  await expectPickerUnobstructed(page);
+  if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/valuation-picker-narrow-desktop.png", fullPage: false });
   await page.getByRole("combobox", { name: "Find a company for valuing" }).fill("nvid");
   await page.getByRole("option", { name: /NVDA NVIDIA/i }).click();
   await expect(page.getByRole("button", { name: /Valuing: NVDA NVIDIA/i })).toBeVisible();
@@ -186,13 +187,38 @@ test("all company selectors search partial names, update state, and remain bound
 });
 
 async function expectMobilePickerBounds(page: Page) {
-  const box = await page.locator(".company-picker").boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.x).toBeGreaterThanOrEqual(0);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
-  expect(box!.y).toBeGreaterThanOrEqual(0);
-  expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+  await expectPickerUnobstructed(page);
   await expectNoDocumentOverflow(page);
+}
+
+async function expectPickerUnobstructed(page: Page) {
+  const result = await page.locator(".company-picker").evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    // Stay inside the picker's rounded corners while still catching any
+    // overlay or ancestor clipping along every edge.
+    const inset = 14;
+    const points = [
+      [rect.left + inset, rect.top + inset],
+      [rect.right - inset, rect.top + inset],
+      [rect.left + inset, rect.bottom - inset],
+      [rect.right - inset, rect.bottom - inset],
+    ];
+    return {
+      rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      parent: element.parentElement?.tagName,
+      cornersVisible: points.every(([x, y]) => {
+        const hit = document.elementFromPoint(x, y);
+        return Boolean(hit && element.contains(hit));
+      }),
+    };
+  });
+  expect(result.parent).toBe("BODY");
+  expect(result.rect.left).toBeGreaterThanOrEqual(0);
+  expect(result.rect.top).toBeGreaterThanOrEqual(0);
+  expect(result.rect.right).toBeLessThanOrEqual(result.viewport.width);
+  expect(result.rect.bottom).toBeLessThanOrEqual(result.viewport.height);
+  expect(result.cornersVisible).toBe(true);
 }
 
 async function expectNoDocumentOverflow(page: Page) {

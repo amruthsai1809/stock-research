@@ -23,7 +23,7 @@ export function MarketSignals({ stock, signal }: { stock: ResearchStock; signal?
       <SignalSummary label="Tracked long managers" value={institutional?.reportDate ? String(institutional.managersHolding) : "Unavailable"} detail={institutional?.reportDate ? `${institutional.managersReported}/${institutional.expectedManagers} managers reported · ${shortDate(institutional.reportDate)}` : "No covered 13F period"} tone={(institutional?.managersNew ?? 0) + (institutional?.managersIncreased ?? 0) > (institutional?.managersReduced ?? 0) + (institutional?.managersExited ?? 0) ? "good" : "neutral"} />
     </section>
     <div className="market-signal-grid">
-      <InsiderActivity signal={signal} />
+      <InsiderActivity key={signal?.symbol ?? "unavailable"} signal={signal} />
       <AnalystConsensus stock={stock} signal={signal} />
       <ShortPositioning signal={signal} />
       <LongPositioning signal={signal} />
@@ -53,20 +53,61 @@ function SignalSummary({ label, value, detail, tone }: { label: string; value: s
 
 function InsiderActivity({ signal }: { signal?: ResearchSignal }) {
   const [windowDays, setWindowDays] = useState<30 | 90 | 366>(90);
+  const [actionFilter, setActionFilter] = useState<"all" | "purchase" | "sale">("all");
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [visibleRows, setVisibleRows] = useState(12);
   const transactions = useMemo(() => {
     const rows = signal?.insider.transactions ?? [];
     const anchor = signal?.insider.asOf ? new Date(`${signal.insider.asOf}T00:00:00Z`) : new Date();
     const cutoff = new Date(anchor.getTime() - windowDays * 86_400_000).toISOString().slice(0, 10);
     return rows.filter((item) => item.transactionDate >= cutoff);
   }, [signal, windowDays]);
-  const months = aggregateInsiderMonths(transactions);
+  const months = aggregateInsiderMonths(transactions, signal?.insider.asOf ?? null, windowDays);
   const max = Math.max(1, ...months.flatMap((month) => [month.purchases, month.sales]));
+  const purchaseCount = transactions.filter((trade) => trade.action === "purchase").length;
+  const saleCount = transactions.length - purchaseCount;
+  const tableTransactions = transactions.filter((trade) => (
+    (actionFilter === "all" || trade.action === actionFilter)
+    && (!selectedMonth || trade.transactionDate.startsWith(selectedMonth))
+  ));
+  const selectedMonthLabel = months.find((month) => month.key === selectedMonth)?.longLabel;
+
   return <section className="panel market-signal-card market-signal-card--wide">
-    <div className="panel-heading"><div><span className="eyebrow">SEC Forms 4 / 4-A</span><h2>Insider transaction tape</h2><p>Open-market purchases and sales only; planned 10b5-1 transactions remain identified.</p></div><div className="signal-heading-actions"><div className="segmented-control segmented-control--compact" aria-label="Insider transaction window">{([30, 90, 366] as const).map((days) => <button key={days} className={windowDays === days ? "is-active" : ""} onClick={() => setWindowDays(days)}>{days === 366 ? "1Y" : `${days}D`}</button>)}</div><span className="method-chip">As of {shortDate(signal?.insider.asOf ?? null)}</span></div></div>
+    <div className="panel-heading"><div><span className="eyebrow">SEC Forms 4 / 4-A</span><h2>Open-market insider activity</h2><p>Official transaction codes P and S only. Awards, option exercises, gifts, and tax withholding are excluded.</p></div><div className="signal-heading-actions"><div className="segmented-control segmented-control--compact" aria-label="Insider transaction window">{([30, 90, 366] as const).map((days) => <button type="button" key={days} className={windowDays === days ? "is-active" : ""} onClick={() => { setWindowDays(days); setSelectedMonth(null); setVisibleRows(12); }}>{days === 366 ? "1Y" : `${days}D`}</button>)}</div><span className="method-chip">As of {shortDate(signal?.insider.asOf ?? null)}</span></div></div>
     {transactions.length ? <>
-      <div className="insider-flow-chart" role="img" aria-label="Monthly corporate insider open-market purchase and sale values">{months.map((month) => <div key={month.key}><span className="insider-flow-chart__buy"><i style={{ height: `${Math.max(month.purchases ? 3 : 0, (month.purchases / max) * 100)}%` }} /></span><span className="insider-flow-chart__zero" /><span className="insider-flow-chart__sell"><i style={{ height: `${Math.max(month.sales ? 3 : 0, (month.sales / max) * 100)}%` }} /></span><b>{month.label}</b></div>)}</div>
-      <div className="insider-legend"><span><i className="is-buy" />Purchases</span><span><i className="is-sale" />Sales</span><small>Bar height represents disclosed transaction value</small></div>
-      <div className="signal-table-wrap"><table className="data-table signal-table"><thead><tr><th>Date</th><th>Insider</th><th>Action</th><th>Value</th><th>After trade</th><th>Source</th></tr></thead><tbody>{transactions.slice(0, 12).map((trade) => <tr key={`${trade.accession}-${trade.ownerName}-${trade.transactionDate}-${trade.shares}`}><td>{shortDate(trade.transactionDate)}</td><td><b>{trade.ownerName}</b><small>{trade.ownerRole}</small></td><td><Tag tone={trade.action === "purchase" ? "good" : "warn"}>{trade.action}</Tag>{trade.rule10b51 && <small>10b5-1</small>}</td><td>{trade.value == null ? `${formatNumber(trade.shares)} sh.` : compactMoney(trade.value)}</td><td>{trade.sharesOwnedAfter == null ? "—" : `${formatNumber(trade.sharesOwnedAfter)} sh.`}</td><td><a href={trade.sourceUrl} target="_blank" rel="noreferrer">Filing ↗</a></td></tr>)}</tbody></table></div>
+      <div
+        className="insider-flow-chart"
+        style={{ "--insider-buckets": months.length } as React.CSSProperties}
+        aria-label="Corporate insider open-market purchase and sale values by month"
+      >{months.map((month) => {
+        const hasActivity = month.purchases > 0 || month.sales > 0;
+        return <button
+          type="button"
+          key={month.key}
+          className={selectedMonth === month.key ? "is-selected" : ""}
+          disabled={!hasActivity}
+          aria-pressed={selectedMonth === month.key}
+          aria-label={`${month.longLabel}: ${compactMoney(month.purchases)} purchases and ${compactMoney(month.sales)} sales`}
+          onClick={() => { setSelectedMonth((current) => current === month.key ? null : month.key); setVisibleRows(12); }}
+        ><span className="insider-flow-chart__buy"><i style={{ height: `${Math.max(month.purchases ? 3 : 0, (month.purchases / max) * 100)}%` }} /></span><span className="insider-flow-chart__zero" /><span className="insider-flow-chart__sell"><i style={{ height: `${Math.max(month.sales ? 3 : 0, (month.sales / max) * 100)}%` }} /></span><b>{month.label}</b></button>;
+      })}</div>
+      <div className="insider-legend"><span><i className="is-buy" />Purchases <b>{purchaseCount}</b></span><span><i className="is-sale" />Sales <b>{saleCount}</b></span><small>Disclosed transaction value · select a month to inspect it</small></div>
+      <div className="insider-table-toolbar">
+        <div className="segmented-control segmented-control--compact" aria-label="Filter insider transactions">
+          <button type="button" className={actionFilter === "all" ? "is-active" : ""} onClick={() => { setActionFilter("all"); setVisibleRows(12); }}>All <span>{transactions.length}</span></button>
+          <button type="button" className={actionFilter === "purchase" ? "is-active" : ""} onClick={() => { setActionFilter("purchase"); setVisibleRows(12); }}>Purchases <span>{purchaseCount}</span></button>
+          <button type="button" className={actionFilter === "sale" ? "is-active" : ""} onClick={() => { setActionFilter("sale"); setVisibleRows(12); }}>Sales <span>{saleCount}</span></button>
+        </div>
+        <div aria-live="polite">
+          {selectedMonthLabel && <button type="button" className="method-chip" onClick={() => { setSelectedMonth(null); setVisibleRows(12); }}>{selectedMonthLabel} ×</button>}
+          <small>Showing {Math.min(visibleRows, tableTransactions.length)} of {tableTransactions.length}</small>
+        </div>
+      </div>
+      {tableTransactions.length ? <>
+        <div className="signal-table-wrap"><table className="data-table signal-table"><thead><tr><th>Date</th><th>Insider</th><th>Action</th><th>Value</th><th>After trade</th><th>Source</th></tr></thead><tbody>{tableTransactions.slice(0, visibleRows).map((trade) => <tr key={`${trade.accession}-${trade.ownerName}-${trade.transactionDate}-${trade.shares}`}><td>{shortDate(trade.transactionDate)}</td><td><b>{trade.ownerName}</b><small>{trade.ownerRole}</small></td><td><Tag tone={trade.action === "purchase" ? "good" : "warn"}>{trade.action}</Tag>{trade.rule10b51 && <small>10b5-1 plan</small>}</td><td>{trade.value == null ? `${formatNumber(trade.shares)} sh.` : compactMoney(trade.value)}</td><td>{trade.sharesOwnedAfter == null ? "—" : `${formatNumber(trade.sharesOwnedAfter)} sh.`}</td><td><a href={trade.sourceUrl} target="_blank" rel="noreferrer">SEC filing ↗</a></td></tr>)}</tbody></table></div>
+        {visibleRows < tableTransactions.length && <button type="button" className="secondary-button insider-show-more" onClick={() => setVisibleRows((current) => current + 12)}>Show 12 more</button>}
+      </> : <Unavailable title="No transactions match these filters" detail="Clear the month or action filter to restore the full transaction list." />}
+      <details className="insider-methodology"><summary>Why this can differ from Robinhood</summary><p>Equity Lab reports raw SEC open-market purchase and sale lines. Robinhood’s TipRanks view also classifies Form 4 activity as informative or uninformative and may display grants, automatic transactions, and estimated values. The two charts therefore do not use the same transaction universe or aggregation.</p></details>
     </> : <Unavailable title={`No open-market transactions in the selected ${windowDays === 366 ? "year" : `${windowDays} days`}`} detail="This is neutral. Equity awards and other non-open-market transaction codes are intentionally excluded." />}
   </section>;
 }
@@ -125,13 +166,24 @@ function LongPositioning({ signal }: { signal?: ResearchSignal }) {
 
 function Unavailable({ title, detail }: { title: string; detail: string }) { return <div className="signal-unavailable"><span>—</span><b>{title}</b><p>{detail}</p></div>; }
 
-function aggregateInsiderMonths(transactions: ResearchSignal["insider"]["transactions"]) {
-  const latest = transactions[0]?.transactionDate ? new Date(`${transactions[0].transactionDate}T00:00:00Z`) : new Date();
-  return Array.from({ length: 8 }, (_, offset) => {
-    const date = new Date(Date.UTC(latest.getUTCFullYear(), latest.getUTCMonth() - (7 - offset), 1));
+function aggregateInsiderMonths(
+  transactions: ResearchSignal["insider"]["transactions"],
+  asOf: string | null,
+  windowDays: 30 | 90 | 366,
+) {
+  const latest = asOf ? new Date(`${asOf}T00:00:00Z`) : new Date();
+  const bucketCount = windowDays === 366 ? 12 : windowDays === 90 ? 4 : 2;
+  return Array.from({ length: bucketCount }, (_, offset) => {
+    const date = new Date(Date.UTC(latest.getUTCFullYear(), latest.getUTCMonth() - (bucketCount - 1 - offset), 1));
     const key = date.toISOString().slice(0, 7);
     const rows = transactions.filter((item) => item.transactionDate.startsWith(key));
-    return { key, label: new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(date), purchases: rows.filter((item) => item.action === "purchase").reduce((sum, item) => sum + (item.value ?? 0), 0), sales: rows.filter((item) => item.action === "sale").reduce((sum, item) => sum + (item.value ?? 0), 0) };
+    return {
+      key,
+      label: new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(date),
+      longLabel: new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(date),
+      purchases: rows.filter((item) => item.action === "purchase").reduce((sum, item) => sum + (item.value ?? 0), 0),
+      sales: rows.filter((item) => item.action === "sale").reduce((sum, item) => sum + (item.value ?? 0), 0),
+    };
   });
 }
 

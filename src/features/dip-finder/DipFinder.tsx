@@ -11,7 +11,8 @@ import { useStockDetail } from "@/src/features/market/useStockDetails";
 type SortKey = "dipScore" | "drawdown52Week" | "qualityScore" | "oneMonthReturn";
 type SortDirection = "asc" | "desc";
 const pageSize = 100;
-const mapLimit = 200;
+const mapColumns = 16;
+const mapRows = 11;
 
 const presets = [
   { id: "all", label: "All signals", quality: 0, drawdown: 0 },
@@ -50,6 +51,7 @@ export function DipFinder({ stocks, onSelect, watchlist, onToggleWatchlist, mark
   const selectedDetail = useStockDetail(marketRepository, selectedStock?.symbol);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const visible = filtered.slice(page * pageSize, (page + 1) * pageSize);
+  const mapPoints = useMemo(() => buildOpportunityMap(filtered), [filtered]);
 
   const changeSort = (key: SortKey) => {
     setPage(0);
@@ -102,13 +104,15 @@ export function DipFinder({ stocks, onSelect, watchlist, onToggleWatchlist, mark
               </table>
             </div>
           ) : (
-            <div className="opportunity-map" aria-label="Price pain versus fundamental quality map">
-              <div className="map-axis map-axis--y">Stronger business ↑</div><div className="map-axis map-axis--x">Deeper drawdown →</div><div className="map-quadrant map-quadrant--prime"><span>Quality on sale</span></div>
-              {filtered.slice(0, mapLimit).map((stock) => <button key={stock.symbol} className={`map-bubble ${selectedStock?.symbol === stock.symbol ? "is-selected" : ""}`} style={{ left: `${clampPosition(Math.abs(stock.drawdown52Week), 3, 55)}%`, bottom: `${clampPosition(stock.qualityScore, 25, 90)}%` }} onClick={() => setSelected(stock.symbol)} title={`${stock.name}: ${stock.dipScore} dip score`}>{stock.symbol}<small>{stock.dipScore}</small></button>)}
+            <div className="opportunity-map-scroll">
+              <div className="opportunity-map" aria-label="Price pain versus fundamental quality map">
+                <div className="map-axis map-axis--y">Stronger business ↑</div><div className="map-axis map-axis--x">Deeper drawdown →</div><div className="map-quadrant map-quadrant--prime"><span>Quality on sale</span></div>
+                {mapPoints.map(({ stock, left, bottom }) => <button key={stock.symbol} className={`map-bubble ${selectedStock?.symbol === stock.symbol ? "is-selected" : ""}`} style={{ left: `${left}%`, bottom: `${bottom}%` }} onClick={() => setSelected(stock.symbol)} aria-label={`Inspect ${stock.symbol} on opportunity map`} title={`${stock.name}: ${stock.dipScore} dip score`}>{stock.symbol}<small>{stock.dipScore}</small></button>)}
+              </div>
             </div>
           )}
           {view === "rank" && pageCount > 1 && <div className="table-pagination"><span>Showing {page * pageSize + 1}–{Math.min(filtered.length, (page + 1) * pageSize)} of {filtered.length}</span><div><button disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>Previous</button><b>{page + 1} / {pageCount}</b><button disabled={page >= pageCount - 1} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}>Next</button></div></div>}
-          {view === "map" && filtered.length > mapLimit && <p className="method-note">Showing the top {mapLimit} ranked signals to keep the interactive map readable.</p>}
+          {view === "map" && <p className="method-note">Showing the best-ranked company in each map cell · {mapPoints.length} visible from {filtered.length} matching companies.</p>}
         </section>
 
         {selectedStock && (
@@ -134,4 +138,22 @@ function SortableHeader({ label, column, active, direction, onSort }: { label: s
 
 function clampPosition(value: number, minimum: number, maximum: number) {
   return Math.min(92, Math.max(8, ((value - minimum) / (maximum - minimum)) * 84 + 8));
+}
+
+function buildOpportunityMap(stocks: StockSummary[]) {
+  const occupied = new Set<string>();
+  return stocks.flatMap((stock) => {
+    const rawLeft = clampPosition(Math.abs(stock.drawdown52Week), 3, 55);
+    const rawBottom = clampPosition(stock.qualityScore, 25, 90);
+    const column = Math.round(((rawLeft - 8) / 84) * (mapColumns - 1));
+    const row = Math.round(((rawBottom - 8) / 84) * (mapRows - 1));
+    const cell = `${column}:${row}`;
+    if (occupied.has(cell)) return [];
+    occupied.add(cell);
+    return [{
+      stock,
+      left: 8 + (column / (mapColumns - 1)) * 84,
+      bottom: 8 + (row / (mapRows - 1)) * 84,
+    }];
+  });
 }

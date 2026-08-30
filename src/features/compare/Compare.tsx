@@ -13,7 +13,10 @@ import { useStockDetails } from "@/src/features/market/useStockDetails";
 const MAX_COMPANIES = 5;
 const DEFAULT_SYMBOLS = ["AAPL", "MSFT", "GOOGL"];
 
-type PickerState = { mode: "add" } | { mode: "replace"; index: number } | null;
+type PickerState =
+  | { mode: "add"; anchor: HTMLElement }
+  | { mode: "replace"; index: number; anchor: HTMLElement }
+  | null;
 
 export function Compare({ stocks, onSelect, marketRepository }: { stocks: StockSummary[]; onSelect: (symbol: string) => void; marketRepository: MarketRepository }) {
   const [selectedSymbols, setSelectedSymbols] = useState(() => buildDefaultSymbols(stocks));
@@ -104,15 +107,23 @@ export function Compare({ stocks, onSelect, marketRepository }: { stocks: StockS
                 <button
                   type="button"
                   className="compare-company-card__identity"
-                  aria-label={`Replace ${stock.symbol}`}
+                  aria-label={`Change ${stock.symbol} company`}
                   aria-expanded={picker?.mode === "replace" && picker.index === index}
-                  onClick={() => setPicker((current) => current?.mode === "replace" && current.index === index ? null : { mode: "replace", index })}
+                  onClick={(event) => setPicker((current) => current?.mode === "replace" && current.index === index ? null : { mode: "replace", index, anchor: event.currentTarget })}
                 >
                   <StockMark symbol={stock.symbol} size="md" />
                   <span><b>{stock.symbol}</b><small title={stock.name}>{stock.name}</small></span>
                   <em><strong>{stock.qualityScore}</strong><small>quality</small></em>
                 </button>
-                <div className="compare-company-card__sector"><span>{stock.sector}</span><b>Replace⌄</b></div>
+                <div className="compare-company-card__sector">
+                  <span>{stock.sector}</span>
+                  <button
+                    type="button"
+                    aria-label={`Replace ${stock.symbol}`}
+                    aria-expanded={picker?.mode === "replace" && picker.index === index}
+                    onClick={(event) => setPicker((current) => current?.mode === "replace" && current.index === index ? null : { mode: "replace", index, anchor: event.currentTarget })}
+                  >Replace⌄</button>
+                </div>
               </div>
               {picker?.mode === "replace" && picker.index === index && (
                 <CompanyPicker
@@ -120,6 +131,7 @@ export function Compare({ stocks, onSelect, marketRepository }: { stocks: StockS
                   excludedSymbols={selectedSymbols}
                   label={`Find a company to replace ${stock.symbol}`}
                   align={index >= Math.ceil(selectedStocks.length / 2) ? "right" : "left"}
+                  anchorElement={picker.anchor}
                   onSelect={(symbol) => replaceAt(index, symbol)}
                   onClose={closePicker}
                 />
@@ -133,7 +145,7 @@ export function Compare({ stocks, onSelect, marketRepository }: { stocks: StockS
                 type="button"
                 className="compare-add-company"
                 aria-expanded={picker?.mode === "add"}
-                onClick={() => setPicker((current) => current?.mode === "add" ? null : { mode: "add" })}
+                onClick={(event) => setPicker((current) => current?.mode === "add" ? null : { mode: "add", anchor: event.currentTarget })}
               >
                 <span>+</span><b>Add company</b><small>{MAX_COMPANIES - selectedStocks.length} slots available</small>
               </button>
@@ -143,6 +155,7 @@ export function Compare({ stocks, onSelect, marketRepository }: { stocks: StockS
                   excludedSymbols={selectedSymbols}
                   label="Find a company to add"
                   align="right"
+                  anchorElement={picker.anchor}
                   onSelect={(symbol) => setSelectedSymbols((current) => [...current, symbol].slice(0, MAX_COMPANIES))}
                   onClose={closePicker}
                 />

@@ -1,16 +1,14 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
-import type { ReactNode } from "react";
-import { createPortal } from "react-dom";
 import type { BenchmarkRepository, MarketRepository } from "@/src/application/ports/repositories";
 import type { StockSummary } from "@/src/domain/stock";
 import { analyzePortfolio, demoPortfolioTransactions, parseBrokerPdfText, parsePortfolioText, type PortfolioBenchmark, type PortfolioParseResult, type PortfolioTransaction } from "@/src/domain/portfolio";
 import { PortfolioPerformanceChart } from "@/src/components/charts/PortfolioPerformanceChart";
 import { MetricCard, StockMark, Tag } from "@/src/components/ui";
+import { CompanyPicker } from "@/src/components/CompanyPicker";
 import { useStockDetails } from "@/src/features/market/useStockDetails";
-import { searchCompanies } from "@/src/domain/companySearch";
 
 export function PortfolioLab({ stocks, onSelect, benchmarkRepository, marketRepository }: { stocks: StockSummary[]; onSelect: (symbol: string) => void; benchmarkRepository: BenchmarkRepository; marketRepository: MarketRepository }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -126,58 +124,33 @@ export function PortfolioLab({ stocks, onSelect, benchmarkRepository, marketRepo
 
 function BenchmarkSelect({ stocks, benchmarks, value, onChange }: { stocks: StockSummary[]; benchmarks: PortfolioBenchmark[]; value: string; onChange: (symbol: string) => void }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [activeIndex, setActiveIndex] = useState(0);
-  const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const selectedStock = stocks.find((stock) => stock.symbol === value);
   const selectedBenchmark = benchmarks.find((instrument) => instrument.symbol === value);
-  const results = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const broad = benchmarks.filter((item) => !normalized || `${item.symbol} ${item.category}`.toLowerCase().includes(normalized)).slice(0, 4).map((item) => ({ symbol: item.symbol, name: item.category, detail: "Broad-market ETF" }));
-    const companies = searchCompanies(stocks, query, Math.max(4, 10 - broad.length)).map((stock) => ({ symbol: stock.symbol, name: stock.name, detail: stock.sector }));
-    return [...broad, ...companies].slice(0, 10);
-  }, [benchmarks, query, stocks]);
+  const additionalItems = useMemo(() => benchmarks.map((item) => ({
+    symbol: item.symbol,
+    name: item.name,
+    detail: item.category,
+  })), [benchmarks]);
+  const close = useCallback(() => setOpen(false), []);
 
-  useEffect(() => {
-    if (!open) return;
-    const closeOutside = (event: PointerEvent) => {
-      if (event.target instanceof Element && event.target.closest(".company-picker")) return;
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    return () => document.removeEventListener("pointerdown", closeOutside);
-  }, [open]);
-
-  const choose = (symbol: string) => { onChange(symbol); setOpen(false); setQuery(""); setActiveIndex(0); };
   return <div ref={rootRef} className={`benchmark-control company-select ${open ? "is-open" : ""}`}>
     <button type="button" className="company-select__trigger" aria-label={`Benchmark: ${value}`} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
       <StockMark symbol={value} size="sm" /><span><small>Benchmark</small><b>{value}<em>{selectedStock?.name ?? selectedBenchmark?.category ?? "Choose comparison"}</em></b><i>Contributions invested on matching dates</i></span><strong aria-hidden="true">⌄</strong>
     </button>
-    {open && <MobilePickerPortal><section className="company-picker company-picker--right" aria-label="Choose portfolio benchmark">
-      <div className="company-picker__search"><span aria-hidden="true">⌕</span><input autoFocus role="combobox" aria-label="Search stock or ETF benchmark" aria-expanded="true" aria-controls={listId} aria-activedescendant={results[activeIndex] ? `${listId}-${results[activeIndex].symbol}` : undefined} value={query} placeholder="Ticker, company, or ETF…" onChange={(event) => { setQuery(event.target.value); setActiveIndex(0); }} onKeyDown={(event) => {
-        if (event.key === "Escape") setOpen(false);
-        if (event.key === "ArrowDown" && results.length) { event.preventDefault(); setActiveIndex((current) => (current + 1) % results.length); }
-        if (event.key === "ArrowUp" && results.length) { event.preventDefault(); setActiveIndex((current) => (current - 1 + results.length) % results.length); }
-        if (event.key === "Enter" && results[activeIndex]) { event.preventDefault(); choose(results[activeIndex].symbol); }
-      }} /><button type="button" onClick={() => setOpen(false)} aria-label="Close benchmark picker">×</button></div>
-      <div className="company-picker__meta"><span>{query ? "Best matches" : "ETFs and companies"}</span><small>{results.length} shown</small></div>
-      <div id={listId} className="company-picker__results" role="listbox">{results.map((item, index) => <button id={`${listId}-${item.symbol}`} type="button" role="option" aria-selected={index === activeIndex} className={index === activeIndex ? "is-active" : ""} key={item.symbol} onMouseEnter={() => setActiveIndex(index)} onClick={() => choose(item.symbol)}><StockMark symbol={item.symbol} size="sm" /><span><b>{item.symbol}</b><small>{item.name}</small></span><em>{item.detail}</em></button>)}</div>
-      <footer><span><kbd>↑</kbd><kbd>↓</kbd> Move</span><span><kbd>↵</kbd> Select</span><small>Local search</small></footer>
-    </section></MobilePickerPortal>}
+    {open && <CompanyPicker
+      stocks={stocks}
+      additionalItems={additionalItems}
+      excludedSymbols={[]}
+      label="Search stock or ETF benchmark"
+      idleLabel="ETFs and companies"
+      placeholder="Ticker, company, or ETF…"
+      align="right"
+      ownerRef={rootRef}
+      onSelect={(symbol) => { onChange(symbol); close(); }}
+      onClose={close}
+    />}
   </div>;
-}
-
-function MobilePickerPortal({ children }: { children: ReactNode }) {
-  const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches);
-  useEffect(() => {
-    const media = window.matchMedia("(max-width: 760px)");
-    const update = () => setMobile(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-  return mobile ? createPortal(children, document.body) : children;
 }
 
 function money(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: value < 1000 ? 2 : 0 }).format(value); }
