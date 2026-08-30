@@ -18,6 +18,7 @@ const INCREMENTAL_REFRESH = process.env.MARKET_REFRESH_MODE === "incremental";
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 let secGate = Promise.resolve();
 let lastSecRequest = 0;
+let companyFactsCircuitOpen = false;
 
 async function fetchSecJson(url, headers) {
   const turn = secGate.then(async () => {
@@ -27,15 +28,16 @@ async function fetchSecJson(url, headers) {
   });
   secGate = turn.catch(() => {});
   await turn;
-  return fetchJson(url, headers);
+  return fetchJson(url, headers, { retryForbidden: !INCREMENTAL_REFRESH });
 }
 
-async function fetchJson(url, headers = {}) {
+async function fetchJson(url, headers = {}, { retryForbidden = true } = {}) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       const response = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) });
       if (response.ok) return response.json();
-      if (![403, 408, 429, 500, 502, 503, 504].includes(response.status) || attempt === 3) {
+      const retryable = [408, 429, 500, 502, 503, 504].includes(response.status) || (retryForbidden && response.status === 403);
+      if (!retryable || attempt === 3) {
         throw new Error(`${response.status} ${response.statusText}: ${url}`);
       }
     } catch (error) {
@@ -105,15 +107,22 @@ async function loadCompany(company) {
     "User-Agent": "Mozilla/5.0 Equity Lab data refresh",
   });
   let factsPayload = null;
-  try {
-    factsPayload = await fetchSecJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, {
-      "User-Agent": USER_AGENT,
-      From: process.env.SEC_CONTACT || "https://amruthg.com",
-      Accept: "application/json",
-      "Accept-Encoding": "gzip, deflate",
-    });
-  } catch (error) {
-    process.stderr.write(`Fundamentals unavailable for ${company.symbol}: ${error.message}\n`);
+  if (!companyFactsCircuitOpen) {
+    try {
+      factsPayload = await fetchSecJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, {
+        "User-Agent": USER_AGENT,
+        From: process.env.SEC_CONTACT || "https://amruthg.com",
+        Accept: "application/json",
+        "Accept-Encoding": "gzip, deflate",
+      });
+    } catch (error) {
+      if (INCREMENTAL_REFRESH && /^403\b/.test(error.message)) {
+        companyFactsCircuitOpen = true;
+        process.stderr.write("[market] SEC Company Facts unavailable from this runner; carrying forward the deployed fundamentals snapshot.\n");
+      } else {
+        process.stderr.write(`Fundamentals unavailable for ${company.symbol}: ${error.message}\n`);
+      }
+    }
   }
   const freshPrices = normalizePrices(pricePayload);
   const history = trimHistoryYears(mergePriceHistories(baseline?.prices, freshPrices.history), universePolicy.historyYears);

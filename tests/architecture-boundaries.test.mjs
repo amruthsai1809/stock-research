@@ -40,3 +40,13 @@ test("concrete repository construction is isolated to the composition root", asy
   }
   assert.deepEqual(constructors, ["src/app/composition/services.ts"]);
 });
+
+test("scheduled SEC refreshes retain compliant identity and bounded fallback behavior", async () => {
+  const workflow = await readFile(path.join(root, ".github", "workflows", "update-market-data.yml"), "utf8");
+  const marketUpdater = await readFile(path.join(root, "scripts", "update-data.mjs"), "utf8");
+  const institutionalUpdater = await readFile(path.join(root, "scripts", "update-institutional.mjs"), "utf8");
+  assert.doesNotMatch(workflow, /SEC_CONTACT:\s*https?:\/\//, "SEC contact identity must not be replaced by a URL");
+  assert.match(marketUpdater, /companyFactsCircuitOpen/);
+  assert.match(institutionalUpdater, /Archives\/edgar\/full-index/);
+  assert.match(institutionalUpdater, /loadBaselineManager/);
+});

@@ -36,13 +36,14 @@ async function enterSecQueue() {
   await turn;
 }
 
-async function fetchOk(url, init = {}) {
+async function fetchOk(url, init = {}, { retryForbidden = true } = {}) {
   const isSec = new URL(url).hostname.endsWith("sec.gov");
   for (let attempt = 0; attempt < 4; attempt += 1) {
     if (isSec) await enterSecQueue();
     const response = await fetch(url, { ...init, headers: { ...(isSec ? SEC_HEADERS : {}), ...(init.headers ?? {}) } });
     if (response.ok) return response;
-    if (![403, 429, 500, 502, 503].includes(response.status) || attempt === 3) throw new Error(`${response.status} ${response.statusText}: ${url}`);
+    const retryable = [429, 500, 502, 503].includes(response.status) || (retryForbidden && response.status === 403);
+    if (!retryable || attempt === 3) throw new Error(`${response.status} ${response.statusText}: ${url}`);
     await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
   }
   throw new Error(`Request failed: ${url}`);
@@ -243,11 +244,13 @@ async function loadCurrentQuarterInsiders(stocks, quarterStart) {
   const result = new Map(stocks.map((stock) => [stock.symbol, []]));
   if (process.env.SIGNAL_SKIP_LIVE_INSIDERS === "1") return result;
   let cursor = 0;
+  let completed = 0;
+  let submissionsCircuitOpen = false;
   const workers = Array.from({ length: Math.min(6, stocks.length) }, async () => {
-    while (cursor < stocks.length) {
+    while (cursor < stocks.length && !submissionsCircuitOpen) {
       const stock = stocks[cursor++];
       try {
-        const submissions = await (await fetchOk(`https://data.sec.gov/submissions/CIK${stock.cik}.json`)).json();
+        const submissions = await (await fetchOk(`https://data.sec.gov/submissions/CIK${stock.cik}.json`, {}, { retryForbidden: false })).json();
         const recent = submissions.filings?.recent ?? {};
         const filings = (recent.form ?? []).map((form, index) => ({ form, accession: recent.accessionNumber[index], filingDate: recent.filingDate[index], primaryDocument: recent.primaryDocument[index], cikNumber: String(Number(stock.cik)) }))
           .filter((filing) => /^4(?:\/A)?$/i.test(filing.form) && filing.filingDate >= quarterStart && filing.accession && filing.primaryDocument);
@@ -260,12 +263,21 @@ async function loadCurrentQuarterInsiders(stocks, quarterStart) {
           }
         }
       } catch (error) {
-        process.stderr.write(`[signals] ${stock.symbol} live insider delta unavailable: ${error.message}\n`);
+        if (/^403\b/.test(error.message)) {
+          if (!submissionsCircuitOpen) {
+            submissionsCircuitOpen = true;
+            process.stderr.write("[signals] SEC submissions unavailable from this runner; retaining the deployed and quarterly-bulk insider evidence.\n");
+          }
+        } else {
+          process.stderr.write(`[signals] ${stock.symbol} live insider delta unavailable: ${error.message}\n`);
+        }
       }
-      if (cursor % 100 === 0 || cursor === stocks.length) process.stdout.write(`[signals] SEC live insider scan ${Math.min(cursor, stocks.length)}/${stocks.length}\n`);
+      completed += 1;
+      if (completed % 100 === 0 || completed === stocks.length) process.stdout.write(`[signals] SEC live insider scan ${completed}/${stocks.length}\n`);
     }
   });
   await Promise.all(workers);
+  if (submissionsCircuitOpen && completed < stocks.length) process.stdout.write(`[signals] SEC live insider scan stopped after ${completed}/${stocks.length}; deployed evidence retained\n`);
   return result;
 }
 

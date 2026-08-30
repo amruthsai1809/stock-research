@@ -24,7 +24,6 @@ jobs:
       - run: npm ci
       - run: npm run data:update:all
         env:
-          SEC_CONTACT: https://github.com/${{ github.repository }}
           MARKET_CONCURRENCY: 6
           MARKET_REFRESH_MODE: incremental
           MARKET_BASE_URL: https://el.amruthg.com

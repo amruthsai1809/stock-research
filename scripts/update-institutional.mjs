@@ -1,12 +1,14 @@
-import { rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { createStagedDirectory, replaceDirectory } from "./lib/atomicOutput.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const OUTPUT_DIR = path.join(ROOT, "public", "data", "institutional");
+const MARKET_INDEX_PATH = path.join(ROOT, "public", "data", "market", "index.json");
 const MAX_QUARTERS = 20;
 const MAX_HOLDINGS_PER_QUARTER = 250;
+const DEPLOYED_BASE_URL = (process.env.INSTITUTIONAL_BASE_URL ?? process.env.MARKET_BASE_URL ?? "").replace(/\/+$/, "");
 const SEC_HEADERS = {
   "User-Agent": `Equity Lab ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
   Accept: "application/json,text/xml,application/xml,text/html",
@@ -55,6 +57,7 @@ const MANUAL_TICKERS = new Map(Object.entries({
 
 let lastSecRequest = 0;
 let secRequestGate = Promise.resolve();
+let secSubmissionsCircuitOpen = false;
 async function enterSecQueue() {
   const turn = secRequestGate.then(async () => {
     const delay = Math.max(0, 130 - (Date.now() - lastSecRequest));
@@ -64,13 +67,14 @@ async function enterSecQueue() {
   secRequestGate = turn.catch(() => {});
   await turn;
 }
-async function fetchOk(url, init = {}) {
+async function fetchOk(url, init = {}, { retryForbidden = true } = {}) {
   const isSec = new URL(url).hostname.endsWith("sec.gov");
   for (let attempt = 0; attempt < 5; attempt += 1) {
     if (isSec) await enterSecQueue();
     const response = await fetch(url, { ...init, headers: { ...SEC_HEADERS, ...(init.headers ?? {}) } });
     if (response.ok) return response;
-    if (![403, 429, 500, 502, 503].includes(response.status) || attempt === 4) throw new Error(`${response.status} ${response.statusText}: ${url}`);
+    const retryable = [429, 500, 502, 503].includes(response.status) || (retryForbidden && response.status === 403);
+    if (!retryable || attempt === 4) throw new Error(`${response.status} ${response.statusText}: ${url}`);
     await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)));
   }
   throw new Error(`Request failed: ${url}`);
@@ -85,12 +89,22 @@ function normalizedIssuer(value) {
 }
 
 async function tickerDirectory() {
-  const payload = await (await fetchOk("https://www.sec.gov/files/company_tickers.json")).json();
   const directory = new Map();
-  for (const entry of Object.values(payload)) {
-    const key = normalizedIssuer(entry.title);
-    if (key && !directory.has(key)) directory.set(key, entry.ticker);
+  try {
+    const payload = await (await fetchOk("https://www.sec.gov/files/company_tickers.json", {}, { retryForbidden: false })).json();
+    for (const entry of Object.values(payload)) {
+      const key = normalizedIssuer(entry.title);
+      if (key && !directory.has(key)) directory.set(key, entry.ticker);
+    }
+  } catch (error) {
+    process.stderr.write(`[13F] SEC ticker directory unavailable; using the generated market universe: ${error.message}\n`);
+    const market = JSON.parse(await readFile(MARKET_INDEX_PATH, "utf8"));
+    for (const stock of market.stocks ?? []) {
+      const key = normalizedIssuer(stock.name);
+      if (key && !directory.has(key)) directory.set(key, stock.symbol);
+    }
   }
+  if (!directory.size) throw new Error("No ticker directory is available for the institutional refresh.");
   return directory;
 }
 
@@ -128,17 +142,116 @@ function filingRows(submissions) {
   })).filter((filing) => ["13F-HR", "13F-HR/A"].includes(filing.form) && filing.accession && filing.reportDate);
 }
 
+function filingQuarterForReport(reportDate) {
+  const [yearText, monthText] = reportDate.split("-");
+  let year = Number(yearText);
+  let quarter = Math.floor((Number(monthText) - 1) / 3) + 2;
+  if (quarter === 5) { quarter = 1; year += 1; }
+  return { year, quarter };
+}
+
+function reportDateFromSubmission(text, fallback) {
+  const compact = text.match(/CONFORMED PERIOD OF REPORT:\s*(\d{8})/i)?.[1];
+  if (compact) return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6)}`;
+  const reported = tag(text, "reportCalendarOrQuarter");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(reported)) return reported;
+  const match = reported.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  return match ? `${match[3]}-${match[1]}-${match[2]}` : fallback;
+}
+
+async function loadQuarterIndexFilings(expected, managers) {
+  const { year, quarter } = filingQuarterForReport(expected);
+  const indexUrl = `https://www.sec.gov/Archives/edgar/full-index/${year}/QTR${quarter}/master.idx`;
+  try {
+    const indexText = await (await fetchOk(indexUrl, {}, { retryForbidden: false })).text();
+    const managerCiks = new Set(managers.map((manager) => String(Number(manager.cik))));
+    const rows = indexText.split(/\r?\n/).flatMap((line) => {
+      const [cik, , form, filedDate, archivePath] = line.split("|");
+      if (!managerCiks.has(cik) || !["13F-HR", "13F-HR/A"].includes(form) || !archivePath) return [];
+      const accession = archivePath.match(/(\d{10}-\d{2}-\d{6})\.txt$/)?.[1];
+      return accession ? [{ cik, form, filedDate, archivePath, accession }] : [];
+    });
+    const filings = await Promise.all(rows.map(async (filing) => {
+      const sourceUrl = `https://www.sec.gov/Archives/${filing.archivePath}`;
+      const submissionText = await (await fetchOk(sourceUrl)).text();
+      return { ...filing, reportDate: reportDateFromSubmission(submissionText, expected), sourceUrl, submissionText, primaryDocument: null };
+    }));
+    const byCik = new Map(managers.map((manager) => [String(Number(manager.cik)), []]));
+    for (const filing of filings) byCik.get(filing.cik)?.push(filing);
+    process.stdout.write(`[13F] discovered ${filings.length} tracked filings in the official ${year} Q${quarter} master index\n`);
+    return byCik;
+  } catch (error) {
+    process.stderr.write(`[13F] Official quarterly master index unavailable: ${error.message}\n`);
+    return new Map(managers.map((manager) => [String(Number(manager.cik)), []]));
+  }
+}
+
+async function loadBaselineManager(config) {
+  if (!DEPLOYED_BASE_URL) return null;
+  try {
+    const response = await fetch(`${DEPLOYED_BASE_URL}/data/institutional/${config.id}.json`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    const manager = await response.json();
+    if (manager.id !== config.id || !manager.quarters?.length) throw new Error("invalid manager profile");
+    return manager;
+  } catch (error) {
+    process.stderr.write(`[13F] No deployed baseline for ${config.id}: ${error.message}\n`);
+    return null;
+  }
+}
+
+function quarterAccessions(quarter) {
+  const accessions = new Set();
+  if (quarter?.accession) accessions.add(quarter.accession);
+  for (const url of quarter?.sourceUrls ?? []) {
+    const accession = url.match(/(\d{10}-\d{2}-\d{6})/)?.[1];
+    if (accession) accessions.add(accession);
+  }
+  return accessions;
+}
+
+function canReuseQuarter(quarter, filings) {
+  if (!quarter || !filings.length) return false;
+  const previous = quarterAccessions(quarter);
+  return previous.size === filings.length && filings.every((filing) => previous.has(filing.accession));
+}
+
+function reuseBaselineManager(config, baseline, expected) {
+  const latest = baseline.quarters[0];
+  const lifecycle = config.lifecycle ?? (latest?.reportDate >= expected
+    ? { status: "active", endedAt: null, reason: "Latest expected quarterly report is available.", sourceUrl: latest.sourceUrl }
+    : { status: "delayed", endedAt: null, reason: `No ${expected} holdings report was found in the available SEC indexes.`, sourceUrl: `https://www.sec.gov/edgar/browse/?CIK=${Number(config.cik)}` });
+  return {
+    ...baseline,
+    id: config.id,
+    cik: config.cik,
+    name: config.name,
+    displayName: config.displayName,
+    category: config.category,
+    description: config.description,
+    lifecycle,
+  };
+}
+
 async function parseFiling(config, filing, directory) {
   const accessionCompact = filing.accession.replaceAll("-", "");
   const base = `https://www.sec.gov/Archives/edgar/data/${Number(config.cik)}/${accessionCompact}`;
-  const index = await (await fetchOk(`${base}/index.json`)).json();
-  const files = index.directory?.item ?? [];
-  const xmlFile = files.find((file) => /\.xml$/i.test(file.name) && !/primary_doc|primary-document|cover|header/i.test(file.name)) ?? files.find((file) => /\.xml$/i.test(file.name));
-  if (!xmlFile) throw new Error("information table XML not found");
-  const xml = await (await fetchOk(`${base}/${xmlFile.name}`)).text();
-  const cover = filing.form.endsWith("/A") && filing.primaryDocument
-    ? await (await fetchOk(`${base}/${filing.primaryDocument}`)).text()
-    : "";
+  let xml = filing.submissionText ?? "";
+  let cover = filing.submissionText ?? "";
+  let sourceUrl = filing.sourceUrl ?? `${base}/${filing.accession}-index.html`;
+  if (!xml) {
+    const index = await (await fetchOk(`${base}/index.json`)).json();
+    const files = index.directory?.item ?? [];
+    const xmlFile = files.find((file) => /\.xml$/i.test(file.name) && !/primary_doc|primary-document|cover|header/i.test(file.name)) ?? files.find((file) => /\.xml$/i.test(file.name));
+    if (!xmlFile) throw new Error("information table XML not found");
+    xml = await (await fetchOk(`${base}/${xmlFile.name}`)).text();
+    cover = filing.form.endsWith("/A") && filing.primaryDocument
+      ? await (await fetchOk(`${base}/${filing.primaryDocument}`)).text()
+      : "";
+  }
   const parsedEntries = [...xml.matchAll(/<(?:\w+:)?infoTable(?:\s[^>]*)?>([\s\S]*?)<\/(?:\w+:)?infoTable>/gi)].map((match) => {
     const block = match[1];
     return {
@@ -173,7 +286,7 @@ async function parseFiling(config, filing, directory) {
     filing,
     amendmentType,
     confidentialOmitted: /confidential information has been omitted/i.test(cover) || /isConfidentialOmitted[^>]*>\s*(?:true|1)/i.test(cover),
-    sourceUrl: `${base}/${filing.accession}-index.html`,
+    sourceUrl,
     holdings: [...aggregated.values()],
   };
 }
@@ -215,15 +328,36 @@ function combineQuarter(reportDate, filings) {
   };
 }
 
-async function fetchManager(config, directory, expected) {
+async function fetchManager(config, directory, expected, baseline, indexedFilings) {
   process.stdout.write(`13F ${config.name}... `);
-  const submissions = await (await fetchOk(`https://data.sec.gov/submissions/CIK${config.cik}.json`)).json();
-  if (!config.namePattern.test(submissions.name ?? "")) throw new Error(`CIK ${config.cik} resolved to unexpected filer: ${submissions.name}`);
-  const rows = filingRows(submissions);
-  const reportDates = [...new Set(rows.map((row) => row.reportDate))].sort().reverse().slice(0, MAX_QUARTERS);
+  let submissions = null;
+  if (!secSubmissionsCircuitOpen) {
+    try {
+      submissions = await (await fetchOk(`https://data.sec.gov/submissions/CIK${config.cik}.json`, {}, { retryForbidden: false })).json();
+    } catch (error) {
+      if (/^403\b/.test(error.message)) secSubmissionsCircuitOpen = true;
+      else process.stderr.write(`\n  submissions feed unavailable: ${error.message}`);
+    }
+  }
+  if (submissions && !config.namePattern.test(submissions.name ?? "")) throw new Error(`CIK ${config.cik} resolved to unexpected filer: ${submissions.name}`);
+  const rowsByAccession = new Map([
+    ...filingRows(submissions ?? {}).map((filing) => [filing.accession, filing]),
+    ...(indexedFilings ?? []).map((filing) => [filing.accession, filing]),
+  ]);
+  const rows = [...rowsByAccession.values()];
+  if (!rows.length && baseline) {
+    process.stdout.write(`no new index rows · reused ${baseline.quarters.length} deployed quarters\n`);
+    return reuseBaselineManager(config, baseline, expected);
+  }
+  if (!rows.length) throw new Error(`No 13F filing rows are available for ${config.name}.`);
+  const baselineByDate = new Map((baseline?.quarters ?? []).map((quarter) => [quarter.reportDate, quarter]));
+  const reportDates = [...new Set([...rows.map((row) => row.reportDate), ...baselineByDate.keys()])].sort().reverse().slice(0, MAX_QUARTERS);
   const quarters = (await Promise.all(reportDates.map(async (reportDate) => {
+    const reportFilings = rows.filter((row) => row.reportDate === reportDate).sort((a, b) => a.filedDate.localeCompare(b.filedDate));
+    const baselineQuarter = baselineByDate.get(reportDate);
+    if (!reportFilings.length || canReuseQuarter(baselineQuarter, reportFilings)) return baselineQuarter ?? null;
     const filings = [];
-    for (const filing of rows.filter((row) => row.reportDate === reportDate).sort((a, b) => a.filedDate.localeCompare(b.filedDate))) {
+    for (const filing of reportFilings) {
       try {
         filings.push(await parseFiling(config, filing, directory));
       } catch (error) {
@@ -239,7 +373,7 @@ async function fetchManager(config, directory, expected) {
   const manager = {
     id: config.id,
     cik: config.cik,
-    secName: submissions.name,
+    secName: submissions?.name ?? baseline?.secName ?? config.name,
     name: config.name,
     displayName: config.displayName,
     category: config.category,
@@ -255,9 +389,18 @@ async function main() {
   const generatedAt = new Date().toISOString();
   const expected = expectedQuarter(new Date(generatedAt));
   const directory = await tickerDirectory();
+  const baselineEntries = await Promise.all(MANAGERS.map(async (config) => [config.id, await loadBaselineManager(config)]));
+  const baselines = new Map(baselineEntries);
+  const indexedFilings = await loadQuarterIndexFilings(expected, MANAGERS);
   const managers = [];
   for (let index = 0; index < MANAGERS.length; index += 4) {
-    managers.push(...await Promise.all(MANAGERS.slice(index, index + 4).map((config) => fetchManager(config, directory, expected))));
+    managers.push(...await Promise.all(MANAGERS.slice(index, index + 4).map((config) => fetchManager(
+      config,
+      directory,
+      expected,
+      baselines.get(config.id),
+      indexedFilings.get(String(Number(config.cik))),
+    ))));
   }
   const activeCount = managers.filter((manager) => manager.lifecycle.status === "active").length;
   if (activeCount < 20) throw new Error(`Institutional refresh failed validation: only ${activeCount} active managers`);
