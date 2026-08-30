@@ -29,8 +29,8 @@ jobs:
           MARKET_REFRESH_MODE: incremental
           MARKET_BASE_URL: https://equitylab.amruthg.com
       - run: npm run typecheck
-      - run: npm run test:data
       - run: npm run build
+      - run: npm run test:data
       - name: Deploy validated snapshot to Cloudflare
         run: npm run deploy:cloudflare
         env:
