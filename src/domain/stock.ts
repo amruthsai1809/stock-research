@@ -67,6 +67,8 @@ export type Stock = {
   description: string;
   exchange: string;
   currency: string;
+  reportingCurrency?: string;
+  fundamentalsTaxonomy?: "us-gaap" | "ifrs-full" | "dei";
   prices: PricePoint[];
   annuals: AnnualFinancials[];
 };

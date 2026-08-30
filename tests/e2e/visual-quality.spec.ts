@@ -63,6 +63,42 @@ test("mobile navigation, search, and charts remain usable without page overflow"
   if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/mobile-search.png", fullPage: false });
 });
 
+test("Dip Finder scores stay legible and sidebar support content never collapses", async ({ page }) => {
+  await page.goto("/?view=dips");
+  await expect(page.getByRole("heading", { name: /^Dip Finder$/ })).toBeVisible();
+
+  const dial = page.locator(".signal-inspector .score-dial");
+  const dialStyles = await dial.evaluate((element) => {
+    const value = element.querySelector("strong")!;
+    const inside = element.querySelector(".score-dial__inside")!;
+    return {
+      width: element.getBoundingClientRect().width,
+      fontSize: Number.parseFloat(getComputedStyle(value).fontSize),
+      valueColor: getComputedStyle(value).color,
+      backgroundColor: getComputedStyle(inside).backgroundColor,
+    };
+  });
+  expect(dialStyles.width).toBeGreaterThanOrEqual(76);
+  expect(dialStyles.width).toBeLessThanOrEqual(80);
+  expect(dialStyles.fontSize).toBeGreaterThanOrEqual(20);
+  expect(dialStyles.valueColor).not.toBe(dialStyles.backgroundColor);
+
+  const supportCard = page.locator(".sidebar-card");
+  const cardDimensions = await supportCard.evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    bottom: element.getBoundingClientRect().bottom,
+    viewportHeight: window.innerHeight,
+    text: element.textContent,
+  }));
+  expect(cardDimensions.clientHeight).toBeGreaterThan(100);
+  expect(cardDimensions.scrollHeight).toBeLessThanOrEqual(cardDimensions.clientHeight + 1);
+  expect(cardDimensions.bottom).toBeLessThanOrEqual(cardDimensions.viewportHeight);
+  expect(cardDimensions.text).toContain("Portfolio lab");
+  expect(cardDimensions.text).toContain("Open private lab");
+  await expect(page.locator(".sidebar-footer")).toBeInViewport();
+});
+
 async function expectNoDocumentOverflow(page: Page) {
   const dimensions = await page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);

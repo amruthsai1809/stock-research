@@ -22,6 +22,7 @@ export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatc
   const [tab, setTab] = useState<CompanyTab>("overview");
   const annuals = stock.annuals.filter((annual) => annual.revenue != null || annual.netIncome != null);
   const latest = stock.latestAnnual;
+  const reportingCurrency = stock.reportingCurrency ?? "USD";
   const insights = useMemo(() => buildInsights(stock), [stock]);
 
   return (
@@ -57,7 +58,7 @@ export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatc
             <MetricCard label="52W drawdown" value={<Change value={stock.drawdown52Week} />} detail={`${formatPercent(stock.distanceFrom200Day)} vs 200D`} accent="coral" />
             <MetricCard label="Revenue growth" value={formatPercent(stock.revenueGrowth)} detail={`FY ${latest?.year ?? "—"}`} />
             <MetricCard label="Operating margin" value={formatPercent(stock.operatingMargin)} detail="latest fiscal year" />
-            <MetricCard label="Free cash flow" value={formatCompactCurrency(latest?.freeCashFlow)} detail={`${formatPercent(stock.freeCashFlowMargin)} margin`} accent="green" />
+            <MetricCard label="Free cash flow" value={formatCompactCurrency(latest?.freeCashFlow, reportingCurrency)} detail={`${formatPercent(stock.freeCashFlowMargin)} margin`} accent="green" />
             <MetricCard label="Share count" value={formatPercent(stock.shareChange)} detail={stock.shareChange != null && stock.shareChange <= 0 ? "net reduction" : "year over year"} />
             <MetricCard label="Quality" value={`${stock.qualityScore}/100`} detail={stock.classification} accent="blue" />
           </section>
@@ -88,12 +89,12 @@ export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatc
           </div>
 
           <section className="panel financial-atlas-panel">
-            <FinancialAtlas annuals={annuals} companyName={stock.name} />
+            <FinancialAtlas annuals={annuals} companyName={stock.name} currency={reportingCurrency} />
           </section>
         </>
       )}
 
-      {tab === "financials" && <div className="view-stack"><section className="panel financial-atlas-panel"><FinancialAtlas annuals={annuals} companyName={stock.name} /></section><FinancialStatements stock={stock} /></div>}
+      {tab === "financials" && <div className="view-stack"><section className="panel financial-atlas-panel"><FinancialAtlas annuals={annuals} companyName={stock.name} currency={reportingCurrency} /></section><FinancialStatements stock={stock} /></div>}
       {tab === "ownership" && <MarketSignals stock={stock} signal={researchSignal} />}
       {tab === "quality" && <QualityLab stock={stock} />}
       {tab === "source" && <SourceLens stock={stock} />}
@@ -103,6 +104,7 @@ export function CompanyResearch({ stock, researchSignal, isWatched, onToggleWatc
 
 function FinancialStatements({ stock }: { stock: AnalyzedStock }) {
   const [mode, setMode] = useState<"value" | "growth" | "margin">("value");
+  const reportingCurrency = stock.reportingCurrency ?? "USD";
   const rows: { label: string; key: keyof AnnualFinancials; parent?: boolean }[] = [
     { label: "Revenue", key: "revenue", parent: true },
     { label: "Gross profit", key: "grossProfit" },
@@ -115,7 +117,7 @@ function FinancialStatements({ stock }: { stock: AnalyzedStock }) {
   const annuals = stock.annuals.slice(-10);
   const display = (row: typeof rows[number], annual: AnnualFinancials, index: number) => {
     const value = annual[row.key] as number | null;
-    if (mode === "value") return formatCompactCurrency(value);
+    if (mode === "value") return formatCompactCurrency(value, reportingCurrency);
     if (mode === "growth") {
       const previous = annuals[index - 1]?.[row.key] as number | null | undefined;
       return value == null || previous == null ? "—" : formatPercent(percentChange(value, previous));
@@ -127,7 +129,7 @@ function FinancialStatements({ stock }: { stock: AnalyzedStock }) {
       <div className="panel-heading"><div><span className="eyebrow">SEC-normalized</span><h2>Financial statements</h2><p>Reported annual values with calculated free cash flow.</p></div><div className="segmented-control segmented-control--compact">{(["value", "growth", "margin"] as const).map((item) => <button key={item} className={mode === item ? "is-active" : ""} onClick={() => setMode(item)}>{item}</button>)}</div></div>
       <div className="statement-scroll">
         <table className="data-table statement-table">
-          <thead><tr><th>USD</th>{annuals.map((annual) => <th key={annual.end}>FY {annual.year}<small>{annual.end}</small></th>)}</tr></thead>
+          <thead><tr><th>{reportingCurrency}</th>{annuals.map((annual) => <th key={annual.end}>FY {annual.year}<small>{annual.end}</small></th>)}</tr></thead>
           <tbody>{rows.map((row) => <tr key={row.key} className={row.parent ? "is-parent" : ""}><td>{row.parent ? <b>{row.label}</b> : row.label}</td>{annuals.map((annual, index) => <td key={annual.end}>{display(row, annual, index)}</td>)}</tr>)}</tbody>
         </table>
       </div>
@@ -166,6 +168,7 @@ function QualityLab({ stock }: { stock: AnalyzedStock }) {
 function SourceLens({ stock }: { stock: AnalyzedStock }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const latest = stock.latestAnnual;
+  const reportingCurrency = stock.reportingCurrency ?? "USD";
   const accession = latest?.accession?.replaceAll("-", "");
   const filingUrl = accession ? `https://www.sec.gov/Archives/edgar/data/${Number(stock.cik)}/${accession}/` : `https://www.sec.gov/edgar/browse/?CIK=${stock.cik}`;
   const sources = [
@@ -180,17 +183,29 @@ function SourceLens({ stock }: { stock: AnalyzedStock }) {
       <div className="panel-heading"><div><span className="eyebrow">Audit the analysis</span><h2>Source lens</h2><p>Every reported metric points back to a filing context.</p></div><a className="primary-button" href={filingUrl} target="_blank" rel="noreferrer">Open SEC filing ↗</a></div>
       <div className="source-list">
         {sources.map(({ label, key, value }) => {
-          const concept = latest?.sourceConcepts?.[key] ?? "Concept unavailable";
+          const concept = conceptIdentity(latest?.sourceConcepts?.[key], stock.fundamentalsTaxonomy);
           const isExpanded = expanded === key;
           return <article key={label} className={`source-item ${isExpanded ? "is-open" : ""}`}>
-            <div className="source-row"><span className="source-row__status">✓</span><div><b>{label}</b><code>us-gaap: {concept}</code></div><div><strong>{formatCompactCurrency(value)}</strong><small>FY {latest?.year ?? "—"} · USD</small></div><button aria-label={`Inspect ${label} lineage`} aria-expanded={isExpanded} onClick={() => setExpanded(isExpanded ? null : key)}>{isExpanded ? "Close ↑" : "Inspect →"}</button></div>
-            {isExpanded && <div className="source-lineage"><span><small>Taxonomy</small><b>US GAAP</b></span><span><small>Concept</small><code>{concept}</code></span><span><small>Period</small><b>{latest?.end ?? "—"}</b></span><span><small>Filed</small><b>{latest?.filed ?? "—"}</b></span><span><small>Accession</small><b>{latest?.accession ?? "—"}</b></span></div>}
+            <div className="source-row"><span className="source-row__status">✓</span><div><b>{label}</b><code>{concept.qualified}</code></div><div><strong>{formatCompactCurrency(value, reportingCurrency)}</strong><small>FY {latest?.year ?? "—"} · {reportingCurrency}</small></div><button aria-label={`Inspect ${label} lineage`} aria-expanded={isExpanded} onClick={() => setExpanded(isExpanded ? null : key)}>{isExpanded ? "Close ↑" : "Inspect →"}</button></div>
+            {isExpanded && <div className="source-lineage"><span><small>Taxonomy</small><b>{concept.taxonomy}</b></span><span><small>Concept</small><code>{concept.name}</code></span><span><small>Period</small><b>{latest?.end ?? "—"}</b></span><span><small>Filed</small><b>{latest?.filed ?? "—"}</b></span><span><small>Accession</small><b>{latest?.accession ?? "—"}</b></span></div>}
           </article>;
         })}
       </div>
       <div className="provenance-card"><div><span className="eyebrow">Filing context</span><strong>{latest?.end ?? "Not available"}</strong><small>Period end</small></div><div><strong>{latest?.filed ?? "Not available"}</strong><small>Filed</small></div><div><strong>{latest?.accession ?? "Not available"}</strong><small>Accession</small></div><div><strong>Reported</strong><small>Confidence</small></div></div>
     </section>
   );
+}
+
+function conceptIdentity(value: string | undefined, fallback?: AnalyzedStock["fundamentalsTaxonomy"]) {
+  const qualified = value ?? `${fallback ?? "us-gaap"}:Concept unavailable`;
+  const separator = qualified.indexOf(":");
+  const namespace = separator >= 0 ? qualified.slice(0, separator) : fallback ?? "us-gaap";
+  const name = separator >= 0 ? qualified.slice(separator + 1) : qualified;
+  return {
+    qualified: `${namespace}: ${name}`,
+    taxonomy: namespace === "ifrs-full" ? "IFRS" : namespace === "dei" ? "SEC DEI" : "US GAAP",
+    name,
+  };
 }
 
 function buildInsights(stock: AnalyzedStock) {

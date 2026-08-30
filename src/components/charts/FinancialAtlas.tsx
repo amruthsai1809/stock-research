@@ -12,7 +12,7 @@ import {
 
 const pulseMetrics: FinancialMetricKey[] = ["revenue", "netIncome", "freeCashFlow", "dilutedEps"];
 
-export function FinancialAtlas({ annuals, companyName }: { annuals: AnnualFinancials[]; companyName: string }) {
+export function FinancialAtlas({ annuals, companyName, currency = "USD" }: { annuals: AnnualFinancials[]; companyName: string; currency?: string }) {
   const periods = useMemo(() => annuals.slice(-10), [annuals]);
   return (
     <div className="financial-atlas" data-company={companyName}>
@@ -22,18 +22,23 @@ export function FinancialAtlas({ annuals, companyName }: { annuals: AnnualFinanc
           <h2>See the business move.</h2>
           <p>Eight chart lenses turn reported filings into a visual operating history. Switch metrics, then point to any fiscal year for the exact value.</p>
         </div>
-        <div className="atlas-legend"><span><i />Reported or filing-derived</span><span><i />Interactive series</span><small>Six annual periods · SEC normalized</small></div>
+        <div className="atlas-legend"><span><i />Reported or filing-derived</span><span><i />Interactive series</span><small>Up to ten annual periods · SEC normalized</small></div>
       </div>
-      <FinancialPulse annuals={periods} companyName={companyName} />
-      <div className="financial-atlas__grid">
-        {financialChartGroups.map((group) => <FinancialTrendCard key={group.id} group={group} annuals={periods} companyName={companyName} />)}
-      </div>
-      <p className="financial-atlas__note">EBITDA is an operating proxy calculated as operating income plus reported depreciation and amortization. Fiscal P/E uses the adjusted close at fiscal year end and reported diluted EPS. Missing values are never estimated.</p>
+      {periods.length ? <>
+        <FinancialPulse annuals={periods} companyName={companyName} currency={currency} />
+        <div className="financial-atlas__grid">
+          {financialChartGroups.map((group) => <FinancialTrendCard key={group.id} group={group} annuals={periods} companyName={companyName} currency={currency} />)}
+        </div>
+        <p className="financial-atlas__note">EBITDA is an operating proxy calculated as operating income plus reported depreciation and amortization. Fiscal P/E is calculated only when trading and reporting currencies match. Missing values are never estimated.</p>
+      </> : <section className="financial-atlas__empty" role="status">
+        <span aria-hidden="true">◇</span>
+        <div><h3>Standardized financial history is unavailable</h3><p>SEC Company Facts does not currently provide a comparable annual revenue or profit series for this security. Price research remains available; financial values are not guessed.</p></div>
+      </section>}
     </div>
   );
 }
 
-function FinancialPulse({ annuals, companyName }: { annuals: AnnualFinancials[]; companyName: string }) {
+function FinancialPulse({ annuals, companyName, currency }: { annuals: AnnualFinancials[]; companyName: string; currency: string }) {
   return <section className="financial-pulse" aria-label={`${companyName} financial pulse`}>
     {pulseMetrics.map((key) => {
       const metric = financialMetrics[key];
@@ -45,7 +50,7 @@ function FinancialPulse({ annuals, companyName }: { annuals: AnnualFinancials[];
       const change = percentageChange(latest, previous);
       return <article key={key}>
         <span><i style={{ background: metric.color }} />{metric.shortLabel}</span>
-        <strong>{formatMetric(latest, metric)}</strong>
+        <strong>{formatMetric(latest, metric, currency)}</strong>
         <small className={change == null ? "muted" : change >= 0 ? "positive" : "negative"}>{change == null ? "No comparison" : `${signed(change)} latest YoY`}</small>
         <MiniTrend values={values} color={metric.color} label={`${companyName} ${metric.label} trend`} />
       </article>;
@@ -53,7 +58,7 @@ function FinancialPulse({ annuals, companyName }: { annuals: AnnualFinancials[];
   </section>;
 }
 
-function FinancialTrendCard({ group, annuals, companyName }: { group: FinancialChartGroup; annuals: AnnualFinancials[]; companyName: string }) {
+function FinancialTrendCard({ group, annuals, companyName, currency }: { group: FinancialChartGroup; annuals: AnnualFinancials[]; companyName: string; currency: string }) {
   const availableKeys = group.metrics.filter((key) => annuals.some((annual) => financialMetrics[key].value(annual) != null));
   const fallbackKey = availableKeys[0] ?? group.metrics[0];
   const [metricKey, setMetricKey] = useState<FinancialMetricKey>(fallbackKey);
@@ -94,16 +99,16 @@ function FinancialTrendCard({ group, annuals, companyName }: { group: FinancialC
       </div>
       <div className="atlas-readout" aria-live="polite">
         <span>Fiscal {activeAnnual?.year ?? "—"}</span>
-        <strong>{formatMetric(activeValue, metric)}</strong>
+        <strong>{formatMetric(activeValue, metric, currency)}</strong>
         <b className={change == null ? "muted" : change >= 0 ? "positive" : "negative"}>{change == null ? "No comparable year" : `${signed(change)} YoY`}</b>
       </div>
-      <AnnualTrendPlot annuals={annuals} values={values} metric={metric} activeIndex={activeIndex} onSelect={setSelectedIndex} companyName={companyName} />
+      <AnnualTrendPlot annuals={annuals} values={values} metric={metric} activeIndex={activeIndex} onSelect={setSelectedIndex} companyName={companyName} currency={currency} />
       <footer><span style={{ background: metric.color }} /><p><b>{metric.label}</b>{metric.description}</p></footer>
     </article>
   );
 }
 
-function AnnualTrendPlot({ annuals, values, metric, activeIndex, onSelect, companyName }: { annuals: AnnualFinancials[]; values: Array<number | null>; metric: FinancialMetricDefinition; activeIndex: number; onSelect: (index: number) => void; companyName: string }) {
+function AnnualTrendPlot({ annuals, values, metric, activeIndex, onSelect, companyName, currency }: { annuals: AnnualFinancials[]; values: Array<number | null>; metric: FinancialMetricDefinition; activeIndex: number; onSelect: (index: number) => void; companyName: string; currency: string }) {
   const rawId = useId();
   const gradientId = `atlas-gradient-${rawId.replaceAll(":", "")}`;
   const width = 640;
@@ -140,7 +145,7 @@ function AnnualTrendPlot({ annuals, values, metric, activeIndex, onSelect, compa
           <stop offset="100%" stopColor={metric.color} stopOpacity=".015" />
         </linearGradient>
       </defs>
-      {levels.map((level) => <g key={level}><line className="annual-trend-plot__grid" x1={left} x2={width - right + 8} y1={yAt(level)} y2={yAt(level)} /><text className="annual-trend-plot__axis" x={width - right + 16} y={yAt(level) + 4}>{formatAxis(level, metric)}</text></g>)}
+      {levels.map((level) => <g key={level}><line className="annual-trend-plot__grid" x1={left} x2={width - right + 8} y1={yAt(level)} y2={yAt(level)} /><text className="annual-trend-plot__axis" x={width - right + 16} y={yAt(level) + 4}>{formatAxis(level, metric, currency)}</text></g>)}
       {minimum < 0 && maximum > 0 && <line className="annual-trend-plot__zero" x1={left} x2={width - right + 8} y1={zeroY} y2={zeroY} />}
       {activePoint && <rect className="annual-trend-plot__focus-band" x={activePoint.x - plotWidth / Math.max(1, annuals.length) / 2} y={top} width={plotWidth / Math.max(1, annuals.length)} height={plotHeight} />}
       {points.map((point) => <rect key={`bar-${point.index}`} x={point.x - barWidth / 2} y={Math.min(point.y, zeroY)} width={barWidth} height={Math.max(2, Math.abs(zeroY - point.y))} rx="5" fill={metric.color} opacity={point.index === activeIndex ? .25 : .11} />)}
@@ -151,7 +156,7 @@ function AnnualTrendPlot({ annuals, values, metric, activeIndex, onSelect, compa
       {annuals.map((annual, index) => <text key={annual.end} className={index === activeIndex ? "annual-trend-plot__year is-active" : "annual-trend-plot__year"} x={xAt(index)} y={height - 8} textAnchor="middle">FY{String(annual.year).slice(-2)}</text>)}
     </svg>
     <div className="annual-trend-plot__hits" style={{ gridTemplateColumns: `repeat(${annuals.length}, 1fr)` }}>
-      {annuals.map((annual, index) => <button key={annual.end} disabled={values[index] == null} aria-label={`Fiscal ${annual.year}: ${formatMetric(values[index], metric)}`} onPointerEnter={() => values[index] != null && onSelect(index)} onFocus={() => values[index] != null && onSelect(index)} onClick={() => values[index] != null && onSelect(index)} />)}
+      {annuals.map((annual, index) => <button key={annual.end} disabled={values[index] == null} aria-label={`Fiscal ${annual.year}: ${formatMetric(values[index], metric, currency)}`} onPointerEnter={() => values[index] != null && onSelect(index)} onFocus={() => values[index] != null && onSelect(index)} onClick={() => values[index] != null && onSelect(index)} />)}
     </div>
   </figure>;
 }
@@ -166,21 +171,30 @@ function MiniTrend({ values, color, label }: { values: Array<number | null>; col
   return <svg className="mini-trend" viewBox="0 0 100 36" preserveAspectRatio="none" role="img" aria-label={label}><polyline points={points} fill="none" stroke={color} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" /></svg>;
 }
 
-function formatMetric(value: number | null, metric: FinancialMetricDefinition) {
+function formatMetric(value: number | null, metric: FinancialMetricDefinition, currency: string) {
   if (value == null || !Number.isFinite(value)) return "Not available";
   if (metric.format === "percent") return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
   if (metric.format === "multiple") return `${value.toFixed(1)}×`;
-  if (metric.format === "perShare") return `${value < 0 ? "−" : ""}$${Math.abs(value).toFixed(2)}`;
+  if (metric.format === "perShare") return formatCurrency(value, currency, 2);
   if (metric.format === "shares") return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(value);
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency, notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
-function formatAxis(value: number, metric: FinancialMetricDefinition) {
+function formatAxis(value: number, metric: FinancialMetricDefinition, currency: string) {
   if (metric.format === "percent") return `${value.toFixed(0)}%`;
   if (metric.format === "multiple") return `${value.toFixed(0)}×`;
-  if (metric.format === "perShare") return `$${Math.abs(value).toFixed(value < 10 ? 1 : 0)}`;
+  if (metric.format === "perShare") return formatCurrency(value, currency, Math.abs(value) < 10 ? 1 : 0);
   if (metric.format === "shares") return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 0 }).format(value);
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 0 }).format(value);
+}
+
+function formatCurrency(value: number, currency: string, digits: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(value);
 }
 
 function percentageChange(value: number | null, previous: number | null) {

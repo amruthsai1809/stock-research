@@ -4,6 +4,7 @@ import { replaceDirectory, writeJsonAtomic } from "./lib/atomicOutput.mjs";
 import { loadEligibleUniverse, symbolSlug, universePolicy } from "./market/universe.mjs";
 import { mergePriceHistories, trimHistoryYears } from "./market/incremental.mjs";
 import { summarizeStock } from "./market/summarize.mjs";
+import { extractAnnualFundamentals } from "./market/fundamentals.mjs";
 
 const DATA_ROOT = path.resolve(import.meta.dirname, "..", "public", "data");
 const OUTPUT_DIRECTORY = path.join(DATA_ROOT, "market");
@@ -13,27 +14,6 @@ const USER_AGENT =
   `Equity Lab ${process.env.SEC_CONTACT || "research@amruthg.com"}`;
 const MARKET_BASE_URL = process.env.MARKET_BASE_URL?.replace(/\/+$/, "");
 const INCREMENTAL_REFRESH = process.env.MARKET_REFRESH_MODE === "incremental";
-
-const conceptAliases = {
-  revenue: ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"],
-  grossProfit: ["GrossProfit"],
-  operatingIncome: ["OperatingIncomeLoss"],
-  netIncome: ["NetIncomeLoss", "ProfitLoss"],
-  operatingCashFlow: ["NetCashProvidedByUsedInOperatingActivities"],
-  capex: ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsForPropertyPlantAndEquipment"],
-  assets: ["Assets"],
-  liabilities: ["Liabilities"],
-  equity: ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
-  cash: ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"],
-  longTermDebt: ["LongTermDebtAndFinanceLeaseObligations", "LongTermDebt", "LongTermDebtNoncurrent", "LongTermDebtAndFinanceLeaseObligationsCurrent", "LongTermDebtCurrent"],
-  shares: ["EntityCommonStockSharesOutstanding", "CommonStockSharesOutstanding"],
-  dilutedEps: ["EarningsPerShareDiluted", "EarningsPerShareDilutedIncludingExtraordinaryItems"],
-  depreciationAndAmortization: ["DepreciationDepletionAndAmortization", "DepreciationDepletionAndAmortizationPropertyPlantAndEquipment", "DepreciationAmortizationAndAccretionNet", "Depreciation"],
-  researchAndDevelopment: ["ResearchAndDevelopmentExpense", "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost"],
-  stockCompensation: ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"],
-  buybacks: ["PaymentsForRepurchaseOfCommonStock"],
-  dividends: ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock"],
-};
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 let secGate = Promise.resolve();
@@ -66,150 +46,11 @@ async function fetchJson(url, headers = {}) {
   throw new Error(`Request failed: ${url}`);
 }
 
-function pickUnits(concept, preferredUnit = "USD") {
-  if (!concept?.units) return [];
-  return concept.units[preferredUnit] || Object.values(concept.units)[0] || [];
-}
-
-function selectConcept(facts, aliases, unit, predicate) {
-  let best = { alias: null, entries: [] };
-  for (const alias of aliases) {
-    const concept = facts?.["us-gaap"]?.[alias] || facts?.dei?.[alias];
-    const entries = pickUnits(concept, unit).filter(predicate).sort((a, b) => (a.end || "").localeCompare(b.end || ""));
-    const latest = entries.at(-1)?.end || "";
-    const bestLatest = best.entries.at(-1)?.end || "";
-    if (latest > bestLatest || (latest === bestLatest && entries.length > best.entries.length)) {
-      best = { alias, entries };
-    }
-  }
-  return best;
-}
-
-function annualSeries(facts, aliases, unit = "USD") {
-  const selected = selectConcept(facts, aliases, unit, (entry) => {
-    if (entry.form !== "10-K" || !entry.start || !entry.end) return false;
-    const days = (Date.parse(entry.end) - Date.parse(entry.start)) / 86_400_000;
-    return days >= 300 && days <= 430;
-  });
-  const entries = selected.entries.sort((a, b) => a.end.localeCompare(b.end) || a.filed.localeCompare(b.filed));
-
-  const byPeriod = new Map();
-  for (const entry of entries) byPeriod.set(entry.end, entry);
-  return [...byPeriod.values()].slice(-10).map((entry) => ({
-    year: Number(entry.end.slice(0, 4)),
-    end: entry.end,
-    filed: entry.filed,
-    value: entry.val,
-    accession: entry.accn,
-    form: entry.form,
-    concept: selected.alias,
-  }));
-}
-
-function instantSeries(facts, aliases, unit = "USD") {
-  const selected = selectConcept(facts, aliases, unit, (entry) => entry.form === "10-K" && entry.end);
-  const entries = selected.entries.sort((a, b) => a.end.localeCompare(b.end) || a.filed.localeCompare(b.filed));
-  const byPeriod = new Map();
-  for (const entry of entries) byPeriod.set(entry.end, entry);
-  return [...byPeriod.values()].slice(-10).map((entry) => ({
-    year: Number(entry.end.slice(0, 4)),
-    end: entry.end,
-    filed: entry.filed,
-    value: entry.val,
-    accession: entry.accn,
-    form: entry.form,
-    concept: selected.alias,
-  }));
-}
-
-function mergeAnnualMetrics(facts) {
-  const series = {
-    revenue: annualSeries(facts, conceptAliases.revenue),
-    grossProfit: annualSeries(facts, conceptAliases.grossProfit),
-    operatingIncome: annualSeries(facts, conceptAliases.operatingIncome),
-    netIncome: annualSeries(facts, conceptAliases.netIncome),
-    operatingCashFlow: annualSeries(facts, conceptAliases.operatingCashFlow),
-    capex: annualSeries(facts, conceptAliases.capex),
-    assets: instantSeries(facts, conceptAliases.assets),
-    liabilities: instantSeries(facts, conceptAliases.liabilities),
-    equity: instantSeries(facts, conceptAliases.equity),
-    cash: instantSeries(facts, conceptAliases.cash),
-    longTermDebt: instantSeries(facts, conceptAliases.longTermDebt),
-    shares: instantSeries(facts, conceptAliases.shares, "shares"),
-    dilutedEps: annualSeries(facts, conceptAliases.dilutedEps, "USD/shares"),
-    depreciationAndAmortization: annualSeries(facts, conceptAliases.depreciationAndAmortization),
-    researchAndDevelopment: annualSeries(facts, conceptAliases.researchAndDevelopment),
-    stockCompensation: annualSeries(facts, conceptAliases.stockCompensation),
-    buybacks: annualSeries(facts, conceptAliases.buybacks),
-    dividends: annualSeries(facts, conceptAliases.dividends),
-  };
-
-  const anchors = series.revenue.length
-    ? series.revenue
-    : series.netIncome.length
-      ? series.netIncome
-      : series.operatingCashFlow;
-  const years = [...new Set(anchors.map((entry) => entry.year))].sort().slice(-10);
-  const valueFor = (metric, year) => series[metric].find((entry) => entry.year === year)?.value ?? null;
-  const conceptFor = (metric, year) => series[metric].find((entry) => entry.year === year)?.concept ?? null;
-  const sourceFor = (year) =>
-    series.revenue.find((entry) => entry.year === year) || series.netIncome.find((entry) => entry.year === year);
-  const instantValueFor = (metric, sourceEnd, year) => {
-    const exact = series[metric].find((entry) => entry.year === year && entry.end === sourceEnd);
-    if (exact) return exact.value;
-    const target = Date.parse(sourceEnd);
-    const nearest = [...series[metric]]
-      .map((entry) => ({ entry, distance: Math.abs(Date.parse(entry.end) - target) }))
-      .filter((candidate) => candidate.distance <= 120 * 86_400_000)
-      .sort((a, b) => a.distance - b.distance)[0];
-    return nearest?.entry.value ?? null;
-  };
-
-  return years.map((year) => {
-    const operatingCashFlow = valueFor("operatingCashFlow", year);
-    const capex = valueFor("capex", year);
-    const source = sourceFor(year);
-    return {
-      year,
-      end: source?.end || `${year}-12-31`,
-      filed: source?.filed || null,
-      accession: source?.accession || null,
-      revenue: valueFor("revenue", year),
-      grossProfit: valueFor("grossProfit", year),
-      operatingIncome: valueFor("operatingIncome", year),
-      netIncome: valueFor("netIncome", year),
-      operatingCashFlow,
-      capex,
-      freeCashFlow:
-        operatingCashFlow == null || capex == null ? null : operatingCashFlow - Math.abs(capex),
-      assets: instantValueFor("assets", source?.end || `${year}-12-31`, year),
-      liabilities: instantValueFor("liabilities", source?.end || `${year}-12-31`, year),
-      equity: instantValueFor("equity", source?.end || `${year}-12-31`, year),
-      cash: instantValueFor("cash", source?.end || `${year}-12-31`, year),
-      longTermDebt: instantValueFor("longTermDebt", source?.end || `${year}-12-31`, year),
-      shares: instantValueFor("shares", source?.end || `${year}-12-31`, year),
-      dilutedEps: valueFor("dilutedEps", year),
-      depreciationAndAmortization: valueFor("depreciationAndAmortization", year),
-      ebitda:
-        valueFor("operatingIncome", year) == null || valueFor("depreciationAndAmortization", year) == null
-          ? null
-          : valueFor("operatingIncome", year) + Math.abs(valueFor("depreciationAndAmortization", year)),
-      researchAndDevelopment: valueFor("researchAndDevelopment", year),
-      stockCompensation: valueFor("stockCompensation", year),
-      buybacks: valueFor("buybacks", year),
-      dividends: valueFor("dividends", year),
-      fiscalYearEndPrice: null,
-      priceToEarnings: null,
-      sourceConcepts: Object.fromEntries(
-        Object.keys(series).map((metric) => [metric, conceptFor(metric, year)]).filter(([, concept]) => concept),
-      ),
-    };
-  });
-}
-
-function attachFiscalValuation(annuals, prices) {
+function attachFiscalValuation(annuals, prices, currenciesMatch) {
   return annuals.map((annual) => {
-    const fiscalPrice = [...prices].reverse().find((point) => point.date <= annual.end)?.adjustedClose ?? null;
+    const fiscalPrice = currenciesMatch
+      ? [...prices].reverse().find((point) => point.date <= annual.end)?.adjustedClose ?? null
+      : null;
     const pe = fiscalPrice != null && annual.dilutedEps != null && annual.dilutedEps > 0
       ? fiscalPrice / annual.dilutedEps
       : null;
@@ -264,22 +105,28 @@ async function loadCompany(company) {
     "User-Agent": "Mozilla/5.0 Equity Lab data refresh",
   });
   let factsPayload = null;
-  if (!baseline) {
-    try {
-      factsPayload = await fetchSecJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, {
-        "User-Agent": USER_AGENT,
-        From: process.env.SEC_CONTACT || "https://amruthg.com",
-        Accept: "application/json",
-        "Accept-Encoding": "gzip, deflate",
-      });
-    } catch (error) {
-      process.stderr.write(`Fundamentals unavailable for ${company.symbol}: ${error.message}\n`);
-    }
+  try {
+    factsPayload = await fetchSecJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, {
+      "User-Agent": USER_AGENT,
+      From: process.env.SEC_CONTACT || "https://amruthg.com",
+      Accept: "application/json",
+      "Accept-Encoding": "gzip, deflate",
+    });
+  } catch (error) {
+    process.stderr.write(`Fundamentals unavailable for ${company.symbol}: ${error.message}\n`);
   }
   const freshPrices = normalizePrices(pricePayload);
   const history = trimHistoryYears(mergePriceHistories(baseline?.prices, freshPrices.history), universePolicy.historyYears);
   if (history.length < 2) throw new Error("Price history contains fewer than two sessions.");
-  const annuals = factsPayload ? attachFiscalValuation(mergeAnnualMetrics(factsPayload.facts), history) : baseline?.annuals ?? [];
+  const extracted = factsPayload ? extractAnnualFundamentals(factsPayload.facts) : null;
+  const hasFreshAnnuals = Boolean(extracted?.annuals.length);
+  const tradingCurrency = freshPrices.meta.currency || baseline?.currency || "USD";
+  const reportingCurrency = hasFreshAnnuals
+    ? extracted.reportingCurrency || baseline?.reportingCurrency || tradingCurrency
+    : baseline?.reportingCurrency || baseline?.currency || tradingCurrency;
+  const annuals = hasFreshAnnuals
+    ? attachFiscalValuation(extracted.annuals, history, reportingCurrency === tradingCurrency)
+    : baseline?.annuals ?? [];
   return {
     symbol: company.symbol,
     cik: company.cik,
@@ -288,7 +135,11 @@ async function loadCompany(company) {
     industry: company.industry,
     description: factsPayload?.entityName || baseline?.description || company.name,
     exchange: freshPrices.meta.fullExchangeName || freshPrices.meta.exchangeName || baseline?.exchange || "US",
-    currency: freshPrices.meta.currency || baseline?.currency || "USD",
+    currency: tradingCurrency,
+    reportingCurrency,
+    fundamentalsTaxonomy: hasFreshAnnuals
+      ? extracted.fundamentalsTaxonomy || baseline?.fundamentalsTaxonomy
+      : baseline?.fundamentalsTaxonomy,
     prices: history,
     annuals,
   };
@@ -374,7 +225,7 @@ async function main() {
     priceAsOf: lastDates.at(-1) || null,
     sources: {
       prices: "Yahoo Finance chart data (community endpoint; end-of-day snapshot)",
-      fundamentals: "SEC EDGAR Company Facts",
+      fundamentals: "SEC EDGAR Company Facts (US GAAP and IFRS)",
       universe: "Nasdaq stock screener joined to SEC exchange and CIK identifiers",
     },
     universe: {

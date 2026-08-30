@@ -215,11 +215,11 @@ export function summarizeStock(
   };
 }
 
-export function formatCompactCurrency(value: number | null | undefined): string {
+export function formatCompactCurrency(value: number | null | undefined, currency = "USD"): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency,
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);

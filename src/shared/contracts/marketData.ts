@@ -54,6 +54,8 @@ export const StockSchema = z.object({
   description: z.string(),
   exchange: z.string(),
   currency: z.string().length(3),
+  reportingCurrency: z.string().length(3).optional(),
+  fundamentalsTaxonomy: z.enum(["us-gaap", "ifrs-full", "dei"]).optional(),
   prices: z.array(PricePointSchema).min(2),
   annuals: z.array(AnnualFinancialsSchema),
 });

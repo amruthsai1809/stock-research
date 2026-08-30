@@ -105,16 +105,18 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
   return <div className="app-shell">
     <aside className="sidebar">
       <button className="brand" onClick={() => navigate("discover")} aria-label={`${product.name} home`}><span className="brand__mark">{product.mark}</span><span><b>{product.name}</b><small>Equity research</small></span></button>
-      <nav className="primary-nav" aria-label="Primary navigation">
-        <span className="nav-label">Research</span>
-        {navigation.filter((item) => item.section === "Research").map((item) => <button key={item.id} className={view === item.id || (item.id === "discover" && view === "company") ? "is-active" : ""} onClick={() => navigate(item.id)}><span>{item.glyph}</span>{item.label}{item.id === "dips" && <em>{stocks.filter((stock) => stock.drawdown52Week < -15).length}</em>}</button>)}
-        <span className="nav-label nav-label--second">Intelligence</span>
-        {navigation.filter((item) => item.section === "Intelligence").map((item) => <button key={item.id} className={view === item.id ? "is-active" : ""} onClick={() => navigate(item.id)}><span>{item.glyph}</span>{item.label}</button>)}
-      </nav>
-      <div className="sidebar-section">
-        <span className="nav-label">Workspace</span>
-        <button onClick={() => setWatchlistOpen(true)}><span>☆</span>Watchlist<em>{watchlist.length}</em></button>
-        <button onClick={() => setSearchOpen(true)}><span>⌕</span>Company search</button>
+      <div className="sidebar-navigation">
+        <nav className="primary-nav" aria-label="Primary navigation">
+          <span className="nav-label">Research</span>
+          {navigation.filter((item) => item.section === "Research").map((item) => <button key={item.id} className={view === item.id || (item.id === "discover" && view === "company") ? "is-active" : ""} onClick={() => navigate(item.id)}><span>{item.glyph}</span>{item.label}{item.id === "dips" && <em>{stocks.filter((stock) => stock.drawdown52Week < -15).length}</em>}</button>)}
+          <span className="nav-label nav-label--second">Intelligence</span>
+          {navigation.filter((item) => item.section === "Intelligence").map((item) => <button key={item.id} className={view === item.id ? "is-active" : ""} onClick={() => navigate(item.id)}><span>{item.glyph}</span>{item.label}</button>)}
+        </nav>
+        <div className="sidebar-section">
+          <span className="nav-label">Workspace</span>
+          <button onClick={() => setWatchlistOpen(true)}><span>☆</span>Watchlist<em>{watchlist.length}</em></button>
+          <button onClick={() => setSearchOpen(true)}><span>⌕</span>Company search</button>
+        </div>
       </div>
       <div className="sidebar-card"><span className="sidebar-card__icon">◉</span><b>Portfolio lab</b><p>Analyze a brokerage export without uploading it.</p><button onClick={() => navigate("portfolio")}>Open private lab →</button></div>
       <footer className="sidebar-footer"><span className="source-status"><i /> Static sources ready</span><small>SEC · House · EOD prices</small></footer>

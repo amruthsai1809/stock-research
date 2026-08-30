@@ -48,6 +48,10 @@ test("market snapshot passes universe, storage, and history quality gates", asyn
     assert.equal(index.universe.minimumMarketCap, 1_000_000_000);
     assert.equal(index.universe.historyYears, 10);
     assert.ok(index.stocks.some((stock) => stock.symbol === "DUOL"), "Duolingo is a required acceptance symbol");
+    const spotify = index.stocks.find((stock) => stock.symbol === "SPOT");
+    assert.ok(spotify?.latestAnnual, "Spotify must retain normalized annual fundamentals");
+    assert.equal(spotify.fundamentalsTaxonomy, "ifrs-full", "Spotify must be sourced from its IFRS filing taxonomy");
+    assert.equal(spotify.reportingCurrency, "EUR", "Spotify fundamentals must retain their reported currency");
   } else {
     assert.ok(index.stocks.length >= 20, "the development fixture must exercise a useful cross-section");
   }
