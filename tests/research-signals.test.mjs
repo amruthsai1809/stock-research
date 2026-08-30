@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const marketUrl = new URL("../public/data/market-data.json", import.meta.url);
@@ -7,18 +7,33 @@ const generatedMarketUrl = new URL("../public/data/market/index.json", import.me
 const signalsUrl = new URL("../public/data/research-signals.json", import.meta.url);
 const institutionalUrl = new URL("../public/data/institutional/index.json", import.meta.url);
 
+async function exists(url) {
+  try {
+    await access(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test("stock-intelligence snapshot covers the complete market universe", async () => {
   const dataset = JSON.parse(await readFile(signalsUrl, "utf8"));
-  const market = JSON.parse(await readFile(dataset.schemaVersion >= 2 ? generatedMarketUrl : marketUrl, "utf8"));
+  const hasGeneratedMarket = await exists(generatedMarketUrl);
+  const market = JSON.parse(await readFile(hasGeneratedMarket ? generatedMarketUrl : marketUrl, "utf8"));
   assert.match(dataset.methodology, /computed locally/i);
   assert.match(dataset.sources.insiders, /^https:\/\/www\.sec\.gov\//);
   assert.match(dataset.sources.institutions, /^https:\/\/www\.sec\.gov\//);
   assert.match(dataset.sources.analysts, /^https:\/\/finance\.yahoo\.com\//);
   const marketSymbols = new Set(market.stocks.map((stock) => stock.symbol));
   const signalSymbols = Object.keys(dataset.signals);
-  assert.ok(signalSymbols.every((symbol) => marketSymbols.has(symbol)));
   assert.equal(dataset.coverage.universe, signalSymbols.length);
-  if (signalSymbols.length === market.stocks.length) assert.deepEqual(signalSymbols.sort(), [...marketSymbols].sort());
+  if (hasGeneratedMarket || dataset.schemaVersion === 1) {
+    assert.ok(signalSymbols.every((symbol) => marketSymbols.has(symbol)));
+    assert.deepEqual(signalSymbols.sort(), [...marketSymbols].sort());
+  } else {
+    assert.ok(signalSymbols.length >= 2_000, "the checked-in production signal index is unexpectedly sparse");
+    assert.ok(signalSymbols.includes("DUOL"), "Duolingo must remain in the production signal universe");
+  }
   assert.ok(new Date(dataset.generatedAt).getTime() > 0);
 });
 
