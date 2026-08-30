@@ -26,6 +26,8 @@ jobs:
         env:
           SEC_CONTACT: https://github.com/${{ github.repository }}
           MARKET_CONCURRENCY: 6
+          MARKET_REFRESH_MODE: incremental
+          MARKET_BASE_URL: https://equitylab.amruthg.com
       - run: npm run typecheck
       - run: npm run test:data
       - run: npm run build

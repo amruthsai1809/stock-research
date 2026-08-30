@@ -39,6 +39,7 @@ Nasdaq screen + SEC identifiers + EOD provider
 - A selected chart fetches only that symbol’s stable archive and small current-year delta. Requests are validated, cached, and deduplicated by the repository adapter.
 - Production market files are generated in the GitHub Actions workspace, deployed directly to Cloudflare, and ignored by Git. There are no dated daily copies and no automated data commits.
 - Stable file paths let Cloudflare reuse unchanged historical assets. On an ordinary trading day only the index and current-year deltas change.
+- Scheduled refreshes use the last validated Cloudflare deployment as an immutable baseline, merge only the newest end-of-day sessions, and carry forward SEC annuals. This avoids refetching ten years of source data and tolerates SEC blocking shared CI runner addresses.
 - The repository retains a small legacy development fixture so a clean clone can build and test without a network backfill.
 - No R2 bucket, database, login system, or server-owned user data is required.
 

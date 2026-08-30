@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { replaceDirectory, writeJsonAtomic } from "./lib/atomicOutput.mjs";
 import { loadEligibleUniverse, symbolSlug, universePolicy } from "./market/universe.mjs";
+import { mergePriceHistories, trimHistoryYears } from "./market/incremental.mjs";
 import { summarizeStock } from "./market/summarize.mjs";
 
 const DATA_ROOT = path.resolve(import.meta.dirname, "..", "public", "data");
@@ -10,6 +11,8 @@ const CONCURRENCY = Math.max(1, Math.min(12, Number.parseInt(process.env.MARKET_
 const USER_AGENT =
   process.env.SEC_USER_AGENT ||
   `Equity Lab ${process.env.SEC_CONTACT || "research@amruthg.com"}`;
+const MARKET_BASE_URL = process.env.MARKET_BASE_URL?.replace(/\/+$/, "");
+const INCREMENTAL_REFRESH = process.env.MARKET_REFRESH_MODE === "incremental";
 
 const conceptAliases = {
   revenue: ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"],
@@ -255,35 +258,57 @@ function roundPrice(value) {
 }
 
 async function loadCompany(company) {
-  const pricePayload = await fetchJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(company.providerSymbol)}?range=10y&interval=1d&events=div%2Csplits`, {
+  const baseline = await loadBaselineCompany(company);
+  const priceRange = baseline ? "5d" : "10y";
+  const pricePayload = await fetchJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(company.providerSymbol)}?range=${priceRange}&interval=1d&events=div%2Csplits`, {
     "User-Agent": "Mozilla/5.0 Equity Lab data refresh",
   });
   let factsPayload = null;
-  try {
-    factsPayload = await fetchSecJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, {
-      "User-Agent": USER_AGENT,
-      From: process.env.SEC_CONTACT || "https://amruthg.com",
-      Accept: "application/json",
-      "Accept-Encoding": "gzip, deflate",
-    });
-  } catch (error) {
-    process.stderr.write(`Fundamentals unavailable for ${company.symbol}: ${error.message}\n`);
+  if (!baseline) {
+    try {
+      factsPayload = await fetchSecJson(`https://data.sec.gov/api/xbrl/companyfacts/CIK${company.cik}.json`, {
+        "User-Agent": USER_AGENT,
+        From: process.env.SEC_CONTACT || "https://amruthg.com",
+        Accept: "application/json",
+        "Accept-Encoding": "gzip, deflate",
+      });
+    } catch (error) {
+      process.stderr.write(`Fundamentals unavailable for ${company.symbol}: ${error.message}\n`);
+    }
   }
-  const prices = normalizePrices(pricePayload);
-  if (prices.history.length < 2) throw new Error("Price history contains fewer than two sessions.");
-  const annuals = factsPayload ? attachFiscalValuation(mergeAnnualMetrics(factsPayload.facts), prices.history) : [];
+  const freshPrices = normalizePrices(pricePayload);
+  const history = trimHistoryYears(mergePriceHistories(baseline?.prices, freshPrices.history), universePolicy.historyYears);
+  if (history.length < 2) throw new Error("Price history contains fewer than two sessions.");
+  const annuals = factsPayload ? attachFiscalValuation(mergeAnnualMetrics(factsPayload.facts), history) : baseline?.annuals ?? [];
   return {
     symbol: company.symbol,
     cik: company.cik,
     name: company.name,
     sector: company.sector,
     industry: company.industry,
-    description: factsPayload?.entityName || company.name,
-    exchange: prices.meta.fullExchangeName || prices.meta.exchangeName || "US",
-    currency: prices.meta.currency || "USD",
-    prices: prices.history,
+    description: factsPayload?.entityName || baseline?.description || company.name,
+    exchange: freshPrices.meta.fullExchangeName || freshPrices.meta.exchangeName || baseline?.exchange || "US",
+    currency: freshPrices.meta.currency || baseline?.currency || "USD",
+    prices: history,
     annuals,
   };
+}
+
+async function loadBaselineCompany(company) {
+  if (!INCREMENTAL_REFRESH) return null;
+  if (!MARKET_BASE_URL) throw new Error("MARKET_BASE_URL is required for an incremental refresh.");
+  const fileName = `${symbolSlug(company.symbol)}.json`;
+  try {
+    const [archive, recent] = await Promise.all([
+      fetchJson(`${MARKET_BASE_URL}/data/market/stocks/${fileName}`, { Accept: "application/json" }),
+      fetchJson(`${MARKET_BASE_URL}/data/market/recent/${fileName}`, { Accept: "application/json" }),
+    ]);
+    if (archive.symbol !== company.symbol || recent.symbol !== company.symbol) throw new Error("Baseline symbol mismatch.");
+    return { ...archive, prices: mergePriceHistories(archive.prices, recent.prices) };
+  } catch (error) {
+    process.stderr.write(`[market] No deployed baseline for ${company.symbol}; running a full symbol refresh: ${error.message}\n`);
+    return null;
+  }
 }
 
 async function main() {

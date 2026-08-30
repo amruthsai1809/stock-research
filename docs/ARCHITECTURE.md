@@ -45,6 +45,8 @@ The scripts directory is the ingestion boundary:
 
 The market boundary follows the same pattern. A compact, precomputed index supports search and universe-wide analysis. A chart or portfolio fetches only the requested companies through a cache-deduplicating repository. Each company is split into a stable historical archive and a small current-year delta, so ordinary daily deployments do not rewrite ten years of unchanged observations.
 
+The scheduled updater treats the current Cloudflare deployment as its last-known-good baseline. It loads stable archives and current-year deltas, requests only the newest market sessions, merges by trading date, trims to the ten-year contract, and carries forward SEC-derived annuals. The original full-refresh path remains available for controlled backfills; routine CI refreshes do not depend on SEC accepting shared GitHub runner IP addresses.
+
 The application loads directories after the shell renders and requests an individual company, manager, or filer profile only when selected. This keeps the initial transfer and JavaScript bundle small, avoids monolithic datasets, and lets the browser and Cloudflare cache immutable history independently.
 
 Every generated research snapshot is assembled in a sibling staging directory, validated for completeness and lineage, and then swapped into place. Single-file generators use an atomic temporary-file rename. A failed refresh therefore leaves the last known-good dataset intact instead of exposing a partially written index or profile set. Production market files exist only in the ephemeral GitHub runner and Cloudflare static deployment; Git history never receives daily data snapshots.

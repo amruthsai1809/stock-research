@@ -25,10 +25,7 @@ export const universePolicy = Object.freeze({
 export async function loadEligibleUniverse({ fetchImpl = fetch, minimumMarketCap = universePolicy.minimumMarketCap } = {}) {
   const [nasdaqPayload, secPayload] = await Promise.all([
     fetchJson(fetchImpl, `${NASDAQ_SCREENER_URL}&_=${Date.now()}`, browserHeaders),
-    fetchJson(fetchImpl, SEC_TICKERS_URL, {
-      "User-Agent": process.env.SEC_USER_AGENT ?? `Equity Lab ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
-      Accept: "application/json",
-    }),
+    loadSecIdentifiers(fetchImpl),
   ]);
 
   const secBySymbol = new Map(
@@ -61,6 +58,35 @@ export async function loadEligibleUniverse({ fetchImpl = fetch, minimumMarketCap
   if (!companies.some((company) => company.symbol === "DUOL")) throw new Error("Universe quality gate failed: DUOL is missing.");
   if (companies.length < 2_000) throw new Error(`Universe quality gate failed: only ${companies.length} eligible companies.`);
   return companies;
+}
+
+async function loadSecIdentifiers(fetchImpl) {
+  const baselineUrl = process.env.MARKET_BASE_URL?.replace(/\/+$/, "");
+  const preferBaseline = process.env.MARKET_REFRESH_MODE === "incremental";
+  if (!preferBaseline) {
+    try {
+      return await fetchJson(fetchImpl, SEC_TICKERS_URL, {
+        "User-Agent": process.env.SEC_USER_AGENT ?? `Equity Lab ${process.env.SEC_CONTACT ?? "research@amruthg.com"}`,
+        Accept: "application/json",
+      });
+    } catch (error) {
+      if (!baselineUrl) throw error;
+      process.stderr.write(`[market] SEC identifier feed unavailable; using the last validated deployment: ${error.message}\n`);
+    }
+  }
+  if (!baselineUrl) throw new Error("MARKET_BASE_URL is required for an incremental refresh.");
+  const baseline = await fetchJson(fetchImpl, `${baselineUrl}/data/market/index.json`, { Accept: "application/json" });
+  if (!Array.isArray(baseline.stocks) || baseline.stocks.length < 2_000 || !baseline.stocks.some((stock) => stock.symbol === "DUOL")) {
+    throw new Error("The deployed market baseline failed its universe quality gate.");
+  }
+  return {
+    data: baseline.stocks.map((stock) => [
+      stock.cik,
+      stock.name,
+      stock.symbol,
+      /^Nasdaq/i.test(stock.exchange) ? "Nasdaq" : "NYSE",
+    ]),
+  };
 }
 
 export function isEligibleSecurity(name = "", context = {}) {

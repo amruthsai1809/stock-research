@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isEligibleSecurity, symbolSlug, universePolicy } from "../../scripts/market/universe.mjs";
+import { mergePriceHistories, trimHistoryYears } from "../../scripts/market/incremental.mjs";
 
 describe("market universe policy", () => {
   it("encodes the approved coverage contract", () => {
@@ -38,5 +39,27 @@ describe("market universe policy", () => {
   it("creates stable Cloudflare-safe filenames", () => {
     expect(symbolSlug("BRK.B")).toBe("brk-b");
     expect(symbolSlug(" duol ")).toBe("duol");
+  });
+});
+
+describe("incremental market history", () => {
+  it("replaces duplicate sessions with the newest observation and remains chronological", () => {
+    const merged = mergePriceHistories(
+      [{ date: "2026-08-27", adjustedClose: 10 }, { date: "2026-08-28", adjustedClose: 11 }],
+      [{ date: "2026-08-28", adjustedClose: 12 }, { date: "2026-08-29", adjustedClose: 13 }],
+    );
+    expect(merged.map((point) => [point.date, point.adjustedClose])).toEqual([
+      ["2026-08-27", 10],
+      ["2026-08-28", 12],
+      ["2026-08-29", 13],
+    ]);
+  });
+
+  it("keeps at most the configured number of calendar years", () => {
+    expect(trimHistoryYears([
+      { date: "2016-08-28" },
+      { date: "2016-08-29" },
+      { date: "2026-08-29" },
+    ], 10).map((point: { date: string }) => point.date)).toEqual(["2016-08-29", "2026-08-29"]);
   });
 });
