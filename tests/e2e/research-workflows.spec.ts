@@ -26,8 +26,15 @@ test("ten-year chart controls render the complete available histories", async ({
   expect(discoverPlotBox).not.toBeNull();
   await expect(discoverPlot.locator("canvas").first()).toBeVisible();
   await page.waitForTimeout(300);
-  await page.mouse.move(0, 0);
-  await page.mouse.move(discoverPlotBox!.x + discoverPlotBox!.width * 0.5, discoverPlotBox!.y + discoverPlotBox!.height * 0.5, { steps: 8 });
+  // Locator hover scrolls the canvas fully into view before sending pointer
+  // events. Absolute page coordinates become stale when the sticky shell or a
+  // late chart resize adjusts the document after boundingBox() resolves.
+  await discoverPlot.hover({
+    position: {
+      x: Math.floor(discoverPlotBox!.width * 0.5),
+      y: Math.floor(discoverPlotBox!.height * 0.5),
+    },
+  });
   await expect(discoverChart.locator(".chart-readout__quote")).toContainText("Pointed session");
 
   await page.getByRole("button", { name: /Compare/ }).click();
