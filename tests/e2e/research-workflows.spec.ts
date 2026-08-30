@@ -87,6 +87,7 @@ test("every primary research feature loads through the application shell", async
     [/Dip Finder/, /^Dip Finder$/],
     [/Screener/, /Build a better shortlist/i],
     [/Valuation Lab/, /Make expectations visible/i],
+    [/Options Lab/, /See what price and time actually do/i],
     [/Company filings/, /The filing is the source of truth/i],
     [/Stock Intelligence/, /A score you can interrogate/i],
   ];
@@ -100,6 +101,49 @@ test("every primary research feature loads through the application shell", async
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expectAccessible(page);
+});
+
+test("options lab links contract, time, volatility, charts, and worker output", async ({ page }) => {
+  await page.goto("/?view=options&symbol=DUOL");
+  await expect(page.getByRole("heading", { name: /See what price and time actually do/i })).toBeVisible();
+  await expect(page.getByLabel("Underlying company")).toHaveValue("DUOL");
+  await expect(page.getByRole("heading", { name: /This scenario (makes|loses) money/i })).toBeVisible();
+  await expect(page.getByText("Ready", { exact: true })).toBeVisible();
+  if (process.env.VISUAL_EVIDENCE === "1") await page.locator("main.content").screenshot({ path: "outputs/visual-qa/options-desktop.png" });
+
+  const targetInput = page.getByLabel("Stock price on scenario date exact value");
+  const strikePrice = Number(await page.getByLabel("Strike price").inputValue());
+  await targetInput.fill(String(strikePrice + 20));
+  await expect(page.getByText("Recomputing")).toBeVisible();
+  await expect(page.getByText("Ready", { exact: true })).toBeVisible();
+  await expect(page.locator("canvas").filter({ visible: true }).last()).toBeVisible();
+
+  const optionMetric = page.getByText("Option P/L", { exact: true }).locator("..").getByRole("strong");
+  const earlyOutcome = await optionMetric.textContent();
+  await page.getByRole("button", { name: "Expiration", exact: true }).click();
+  await expect(optionMetric).not.toHaveText(earlyOutcome ?? "");
+
+  await page.getByRole("button", { name: /Put Benefits from a fall/i }).click();
+  await expect(page.getByRole("button", { name: /Put Benefits from a fall/i })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("This scenario cannot be modeled yet.")).toHaveCount(0);
+
+  const payoff = page.getByRole("img", { name: /Profit and loss curve/i });
+  await expect(payoff).toBeVisible();
+  await payoff.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByText("on selected date", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: /Model assumptions/i }).click();
+  await expect(page.getByLabel("Exercise style")).toBeVisible();
+  await expectAccessible(page);
+
+  if (process.env.VISUAL_EVIDENCE === "1") {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/?view=options&symbol=DUOL");
+    await expect(page.getByRole("heading", { name: /See what price and time actually do/i })).toBeVisible();
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: "outputs/visual-qa/options-mobile.png", fullPage: false });
+  }
 });
 
 async function expectCompleteRange(locator: ReturnType<Page["locator"]>) {

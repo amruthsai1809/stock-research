@@ -18,6 +18,16 @@ AppBootstrap → composition root → concrete adapters
 
 Feature modules may consume domain functions and UI primitives. Domain modules never import React, browser APIs, or generated data. This keeps financial formulas deterministic and portable.
 
+Options Lab follows the same direction with an additional compute boundary:
+
+```text
+Options view → reducer/controller → scenario use case → pricing/risk domain
+                             ↓
+                 versioned scenario worker
+```
+
+The worker receives cloneable application inputs and returns a price-by-date surface. Request identifiers prevent an older calculation from replacing a newer slider state. The previously rendered surface remains mounted while the new one is computed, avoiding visual flicker.
+
 ## Model, view, and data boundaries
 
 The product uses pragmatic model-view separation rather than a stateful application server:
@@ -76,6 +86,7 @@ Architecture boundary tests prevent domain-to-framework imports, presentation-to
 - Navigation and modeling assumptions are ephemeral React state.
 - Watchlists and theme preference use local storage because they are explicitly device-local.
 - Imported portfolio transactions stay in memory. Persistence happens only when a visitor explicitly exports a file.
+- Options contracts and scenario assumptions stay in reducer memory and are discarded on refresh.
 - There is no server-owned user state.
 
 ## Failure behavior
@@ -89,6 +100,7 @@ Architecture boundary tests prevent domain-to-framework imports, presentation-to
 
 - Zod contracts validate static JSON at repository boundaries before domain code receives it.
 - Unit tests cover domain policies, view-model filtering and sorting, runtime contracts, ranking rules, and atomic snapshot helpers with enforced coverage thresholds.
+- Options tests add exact payoff, put-call parity, American-versus-European bounds, tree convergence, implied-volatility recovery, Greek signs/scaling, date policies, worker freshness, and scenario-surface invariants.
 - Browser tests exercise ten-year chart controls, on-demand company loading, disclosure ranking and position ordering, manager lifecycle labeling, portfolio import, global search, theme switching, desktop/mobile feature boundaries, visual stability, and WCAG A/AA checks.
 - Feature-level lazy loading keeps large parsers and research workbenches out of the initial client bundle. CI rejects any individual client asset above the documented bundle budget.
 - Dependency updates are monitored automatically, and production dependencies are audited on every quality run.
@@ -107,3 +119,4 @@ Architecture boundary tests prevent domain-to-framework imports, presentation-to
 - [ADR 0001: Static modular architecture](adr/0001-static-modular-architecture.md)
 - [ADR 0002: Atomic research snapshots](adr/0002-atomic-research-snapshots.md)
 - [ADR 0003: Split market snapshots with stable paths](adr/0003-split-market-snapshots.md)
+- [ADR 0004: Local options scenario model](adr/0004-local-options-scenario-model.md)

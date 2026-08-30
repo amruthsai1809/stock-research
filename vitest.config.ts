@@ -9,6 +9,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary"],
       include: [
+        "src/domain/options/**/*.ts",
         "src/domain/government.ts",
         "src/features/government/governmentViewModel.ts",
         "src/shared/contracts/governmentData.ts",

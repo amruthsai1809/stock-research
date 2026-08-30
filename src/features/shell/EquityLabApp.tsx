@@ -15,6 +15,7 @@ const CompanyResearch = lazy(() => import("@/src/features/company/CompanyResearc
 const Screener = lazy(() => import("@/src/features/screener/Screener").then((module) => ({ default: module.Screener })));
 const Compare = lazy(() => import("@/src/features/compare/Compare").then((module) => ({ default: module.Compare })));
 const ValuationLab = lazy(() => import("@/src/features/valuation/ValuationLab").then((module) => ({ default: module.ValuationLab })));
+const OptionsLab = lazy(() => import("@/src/features/options/OptionsLab").then((module) => ({ default: module.OptionsLab })));
 const FilingIntel = lazy(() => import("@/src/features/filings/FilingIntel").then((module) => ({ default: module.FilingIntel })));
 const PortfolioLab = lazy(() => import("@/src/features/portfolio/PortfolioLab").then((module) => ({ default: module.PortfolioLab })));
 const InstitutionalHoldings = lazy(() => import("@/src/features/institutional/InstitutionalHoldings").then((module) => ({ default: module.InstitutionalHoldings })));
@@ -78,7 +79,7 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
 
   const navigate = (next: AppView) => {
     setView(next);
-    writeView(next, next === "company" ? selectedSymbol : undefined);
+    writeView(next, next === "company" || next === "options" ? selectedSymbol : undefined);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -140,6 +141,7 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
         {view === "screener" && <Screener stocks={stocks} onSelect={selectStock} />}
         {view === "compare" && <Compare stocks={stocks} onSelect={selectStock} marketRepository={services.marketRepository} />}
         {view === "valuation" && <ValuationLab stocks={stocks} initialSymbol={selectedSymbol} onSelect={selectStock} />}
+        {view === "options" && <OptionsLab stocks={stocks} initialSymbol={selectedSymbol} onSelect={selectStock} onSymbolChange={(symbol) => { setSelectedSymbol(symbol); writeView("options", symbol); }} />}
         {view === "filings" && <FilingIntel stocks={stocks} onSelect={selectStock} />}
         {view === "signals" && <StockIntelligence stocks={stocks} repository={services.researchSignalRepository} onSelect={selectStock} />}
         {view === "portfolio" && <PortfolioLab stocks={stocks} onSelect={selectStock} benchmarkRepository={services.benchmarkRepository} marketRepository={services.marketRepository} />}

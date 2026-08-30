@@ -36,6 +36,23 @@ The valuation lab is a deliberately compact equity cash-flow model. It projects 
 
 The model omits many company-specific adjustments. Its purpose is to make assumptions visible and testable, not to produce a precise target price.
 
+## Options laboratory
+
+Options Lab is a local scenario model for a visitor-entered long call or long put. It does not ingest or republish an options chain. The current underlying value is the latest available end-of-day adjusted close; strike, expiration, premium, and quantity come from the visitor.
+
+Expiration profit and loss is exact for the entered premium:
+
+```text
+long call P/L = (max(stock price − strike, 0) − premium) × multiplier × contracts
+long put P/L  = (max(strike − stock price, 0) − premium) × multiplier × contracts
+```
+
+Before expiration, American-style theoretical value uses a Cox–Ross–Rubinstein binomial tree with continuous dividend yield and early-exercise checks. European-style value uses Black–Scholes. Implied volatility is solved from the visitor's premium by bracketed bisection after checking the model's attainable premium bounds. Greeks are stable finite differences from the same selected pricing model and are shown both per share and in position dollars.
+
+Dates are UTC date-only values. Time to expiration is remaining calendar days divided by 365; the interface does not imply intraday precision from end-of-day source data. Price, time, and volatility contributions use an exact three-factor Shapley decomposition, so their components reconcile to the total modeled option-value change without depending on an arbitrary update order.
+
+The model omits bid–ask spreads, commissions, taxes, liquidity, discrete dividend schedules, assignment mechanics, probability forecasts, and broker margin. It is educational scenario analysis, not a quote, recommendation, or claim that a contract can be executed at the entered premium.
+
 ## Data confidence
 
 The product preserves missing values and exposes reporting dates. Composite models treat missing factors as neutral rather than inferring undisclosed values. This prevents absence of data from being mistaken for strong or weak performance.

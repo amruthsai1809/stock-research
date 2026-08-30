@@ -28,6 +28,8 @@ export const metadata: Metadata = {
     "public official trades",
     "portfolio comparison",
     "valuation",
+    "options calculator",
+    "options payoff",
   ],
   openGraph: {
     title: `${product.name} — Evidence before opinion`,

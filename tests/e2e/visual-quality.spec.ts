@@ -6,6 +6,7 @@ const routes: Array<{ button: RegExp; heading: RegExp; slug: string }> = [
   { button: /Screener/, heading: /Build a better shortlist/i, slug: "screener" },
   { button: /Compare/, heading: /Compare the business and the price/i, slug: "compare" },
   { button: /Valuation Lab/, heading: /Make expectations visible/i, slug: "valuation" },
+  { button: /Options Lab/, heading: /See what price and time actually do/i, slug: "options" },
   { button: /Company filings/, heading: /The filing is the source of truth/i, slug: "filings" },
   { button: /Stock Intelligence/, heading: /A score you can interrogate/i, slug: "intelligence" },
   { button: /My Portfolio/, heading: /Your history/i, slug: "portfolio" },
@@ -45,6 +46,7 @@ test("mobile navigation, search, and charts remain usable without page overflow"
     [/Dips/, /^Dip Finder$/],
     [/Screen/, /Build a better shortlist/i],
     [/Compare/, /Compare the business and the price/i],
+    [/Options/, /See what price and time actually do/i],
     [/Scores/, /A score you can interrogate/i],
     [/Officials/, /Follow the filing/i],
   ] as const) {
