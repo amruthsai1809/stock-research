@@ -112,11 +112,11 @@ test("company picker is unobstructed, replaces the roster, and becomes a bounded
   const picker = page.locator(".company-picker");
   await expect(picker).toBeVisible();
   await expectPickerUnobstructed(page);
-  await page.getByRole("combobox", { name: "Find a company to replace AAPL" }).fill("duoli");
-  await page.getByRole("option", { name: /DUOL Duolingo Inc/i }).click();
-  await expect(page.getByRole("button", { name: "Replace DUOL" })).toBeVisible();
-  await expect(page.locator(".comparison-table thead")).toContainText("DUOL");
-  await expect(page.locator(".comparison-live")).toContainText("DUOL");
+  await page.getByRole("combobox", { name: "Find a company to replace AAPL" }).fill("nvid");
+  await page.getByRole("option", { name: /NVDA NVIDIA/i }).click();
+  await expect(page.getByRole("button", { name: "Replace NVDA" })).toBeVisible();
+  await expect(page.locator(".comparison-table thead")).toContainText("NVDA");
+  await expect(page.locator(".comparison-live")).toContainText("NVDA");
   expect(Date.now() - replaceStarted).toBeLessThan(2_000);
   if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/compare-picker-desktop.png", fullPage: false });
 
