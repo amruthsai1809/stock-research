@@ -9,6 +9,7 @@ import type { ResearchSignalDataset } from "@/src/modules/stock-intelligence/dom
 import { navigation, readSymbol, readView, writeView, type AppView } from "@/src/features/shell/navigation";
 import { useResearchSignal, useStockDetail } from "@/src/features/market/useStockDetails";
 import { product } from "@/src/config/product";
+import { ProjectNotice } from "@/src/features/shell/ProjectNotice";
 
 const Discover = lazy(() => import("@/src/features/discover/Discover").then((module) => ({ default: module.Discover })));
 const DipFinder = lazy(() => import("@/src/features/dip-finder/DipFinder").then((module) => ({ default: module.DipFinder })));
@@ -33,6 +34,7 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
   const [watchlist, setWatchlist] = useState<string[]>(readWatchlist);
   const [searchOpen, setSearchOpen] = useState(false);
   const [watchlistOpen, setWatchlistOpen] = useState(false);
+  const [projectNoticeOpen, setProjectNoticeOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(readTheme);
   const selectedStock = stocks.find((stock) => stock.symbol === selectedSymbol) ?? stocks[0];
   const selectedDetail = useStockDetail(services.marketRepository, view === "company" ? selectedStock?.symbol : undefined);
@@ -68,7 +70,7 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen((current) => !current); }
-      if (event.key === "Escape") { setSearchOpen(false); setWatchlistOpen(false); }
+      if (event.key === "Escape") { setSearchOpen(false); setWatchlistOpen(false); setProjectNoticeOpen(false); }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -139,7 +141,7 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
         </div>
       </header>
 
-      <div className="data-banner"><span>Research snapshot</span><p>End-of-day prices and official filings · No login · No paid data service · Not investment advice</p><button onClick={() => navigate("filings")}>Inspect sources →</button></div>
+      <div className="data-banner"><span>Personal project</span><p>Non-commercial · Open source · No ads, payments, donations, or accounts · Not investment advice</p><div className="data-banner__actions"><button onClick={() => setProjectNoticeOpen(true)}>Project notice</button><button onClick={() => navigate("filings")}>Inspect sources →</button></div></div>
 
       <main className="content"><Suspense fallback={<FeatureLoading />}>
         {view === "discover" && <Discover stocks={stocks} onSelect={selectStock} onOpenDipFinder={() => navigate("dips")} marketRepository={services.marketRepository} />}
@@ -157,12 +159,13 @@ export function EquityLabApp({ services }: { services: ApplicationServices }) {
         {view === "government" && <GovernmentInvestments onSelect={selectStock} repository={services.governmentRepository} />}
       </Suspense></main>
 
-      <footer className="site-footer"><span><b>{product.name}</b> · Open-source project</span><span>Data as of {formatDate(dataset.priceAsOf)} · Not investment advice</span></footer>
+      <footer className="site-footer"><span className="site-footer__identity"><b>{product.name}</b><span>· Personal, non-commercial, open-source project</span><button className="site-footer__notice" onClick={() => setProjectNoticeOpen(true)}>Project notice</button></span><span>Data as of {formatDate(dataset.priceAsOf)} · Not investment advice</span></footer>
     </div>
 
     <nav className="mobile-nav" aria-label="Mobile navigation">{navigation.map((item) => <button key={item.id} className={view === item.id ? "is-active" : ""} onClick={() => navigate(item.id)}><span>{item.glyph}</span><small>{item.shortLabel}</small></button>)}</nav>
     {searchOpen && <SearchDialog stocks={stocks} onSelect={selectStock} onClose={() => setSearchOpen(false)} />}
     {watchlistOpen && <WatchlistDrawer stocks={stocks} symbols={watchlist} onSelect={selectStock} onToggle={toggleWatchlist} onClose={() => setWatchlistOpen(false)} />}
+    {projectNoticeOpen && <ProjectNotice onClose={() => setProjectNoticeOpen(false)} />}
   </div>;
 }
 

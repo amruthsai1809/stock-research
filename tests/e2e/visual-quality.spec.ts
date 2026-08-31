@@ -63,6 +63,45 @@ test("mobile navigation, search, and charts remain usable without page overflow"
   if (process.env.VISUAL_EVIDENCE === "1") await page.screenshot({ path: "outputs/visual-qa/mobile-search.png", fullPage: false });
 });
 
+test("project notice clearly states the non-commercial boundary on desktop and mobile", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".data-banner").getByRole("button", { name: /Inspect sources/ })).toBeVisible();
+  await page.locator(".data-banner").getByRole("button", { name: /Project notice/ }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Personal, non-commercial project" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("It is not operated as a business or startup.");
+  await expect(dialog).toContainText("No payments, subscriptions, advertising, donations, sponsorships");
+  await expect(dialog).toContainText("No paid consulting, custom development, support contracts, API access, or data sales.");
+  await expect(dialog).toContainText("No accounts, customer funds, brokerage services, trade execution, or investment advisory services.");
+  await expect(dialog).not.toContainText(/H-1B|visa/i);
+  await expectElementInsideViewport(dialog);
+  await expectNoDocumentOverflow(page);
+  if (process.env.VISUAL_EVIDENCE === "1") {
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: "outputs/visual-qa/project-notice-desktop.png", fullPage: false });
+  }
+
+  await page.getByRole("button", { name: "Understood" }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const footerNotice = page.locator(".site-footer__notice");
+  await footerNotice.scrollIntoViewIfNeeded();
+  await footerNotice.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("article")).toHaveCount(4);
+  await expectElementInsideViewport(dialog);
+  await expectNoDocumentOverflow(page);
+  if (process.env.VISUAL_EVIDENCE === "1") {
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: "outputs/visual-qa/project-notice-mobile.png", fullPage: false });
+  }
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});
+
 test("Dip Finder scores stay legible and sidebar support content never collapses", async ({ page }) => {
   await page.goto("/?view=dips");
   await expect(page.getByRole("heading", { name: /^Dip Finder$/ })).toBeVisible();
@@ -224,6 +263,17 @@ async function expectPickerUnobstructed(page: Page) {
 async function expectNoDocumentOverflow(page: Page) {
   const dimensions = await page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);
+}
+
+async function expectElementInsideViewport(locator: Locator) {
+  const bounds = await locator.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: window.innerWidth, height: window.innerHeight };
+  });
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.top).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeLessThanOrEqual(bounds.width);
+  expect(bounds.bottom).toBeLessThanOrEqual(bounds.height);
 }
 
 async function installLayoutShiftObserver(page: Page) {
