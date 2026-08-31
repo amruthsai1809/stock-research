@@ -10,6 +10,7 @@
     "build": "vinext build",
     "start": "vinext start",
     "data:update": "node scripts/update-data.mjs",
+    "data:hydrate:market": "node scripts/hydrate-market-snapshot.mjs",
     "data:update:sample": "node --env-file-if-exists=.env.local scripts/update-data.mjs",
     "data:intelligence": "node scripts/update-intelligence.mjs",
     "data:government:leaderboard": "node scripts/build-government-leaderboard.mjs",
@@ -24,7 +25,7 @@
     "test": "npm run typecheck && npm run test:unit && npm run build && npm run bundle:check && npm run cloudflare:check && npm run test:data",
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "cloudflare:check": "wrangler deploy --config dist/server/wrangler.json --dry-run",
-    "deploy:cloudflare": "wrangler deploy --config dist/server/wrangler.json",
+    "deploy:cloudflare": "node scripts/check-deploy-assets.mjs && wrangler deploy --config dist/server/wrangler.json",
     "security:check": "npm audit --omit=dev --audit-level=high",
     "quality": "npm run lint && npm test && npm run security:check",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
